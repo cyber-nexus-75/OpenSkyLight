@@ -21,7 +21,8 @@ export function createIcsSync(deps: { db: AppDb; deviceTz: () => string }) {
         name: input.name,
         color: input.color,
         readOnly: true,
-        visible: true
+        visible: true,
+        personId: null
       })
       .run()
     const [row] = db.select().from(calendars).where(eq(calendars.id, id)).all()

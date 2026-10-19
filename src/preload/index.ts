@@ -7,6 +7,7 @@ const ALLOWED_INVOKE_PREFIXES = [
   'calendars:',
   'events:',
   'google:',
+  'caldav:',
   'ics:',
   'sync:',
   'weather:',

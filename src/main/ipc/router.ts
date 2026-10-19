@@ -13,6 +13,8 @@ import type { CalendarService } from '../services/calendarService'
 import type { EventService } from '../services/eventService'
 import type { GoogleAuth } from '../sync/googleAuth'
 import type { GoogleSync } from '../sync/googleSync'
+import type { CalDavAuth } from '../sync/caldavAuth'
+import type { CalDavSync } from '../sync/caldavSync'
 import type { IcsSync } from '../sync/icsSync'
 import type { SyncManager } from '../sync/scheduler'
 import type { WeatherService } from '../services/weatherService'
@@ -36,6 +38,8 @@ export interface Services {
   events: EventService
   googleAuth: GoogleAuth
   googleSync: GoogleSync
+  caldavAuth: CalDavAuth
+  caldavSync: CalDavSync
   icsSync: IcsSync
   syncManager: SyncManager
   weather: WeatherService
@@ -63,6 +67,10 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'google:connect',
   'google:disconnect',
   'google:setCalendarSelected',
+  'caldav:connect',
+  'caldav:disconnect',
+  'caldav:setCalendarSelected',
+  'caldav:setCalendarPerson',
   'ics:add',
   'calendars:create',
   'calendars:update',
@@ -104,6 +112,8 @@ const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'google:connect': 'calendars',
   'google:disconnect': 'calendars',
   'google:setCalendarSelected': 'calendars',
+  'caldav:setCalendarSelected': 'calendars',
+  'caldav:setCalendarPerson': 'calendars',
   'ics:add': 'calendars',
   'lists:create': 'lists',
   'lists:update': 'lists',
@@ -253,10 +263,28 @@ export function buildChannelTable(services: Services): ChannelTable {
       name: row.name,
       color: row.color,
       readOnly: row.readOnly,
-      visible: row.visible
+      visible: row.visible,
+      personId: row.personId
     }
   })
 
+  handle('caldav:getStatus', null, () => ({ accounts: services.caldavAuth.listAccounts() }))
+  handle('caldav:connect', s.caldavConnectSchema, async (req) => {
+    const result = await services.caldavAuth.connect(req)
+    services.syncManager.syncNow()
+    return result
+  })
+  handle('caldav:disconnect', s.accountIdSchema, (req) => services.caldavAuth.disconnect(req.accountId))
+  handle('caldav:listRemoteCalendars', s.accountIdSchema, (req) =>
+    services.caldavSync.listRemoteCalendars(req.accountId)
+  )
+  handle('caldav:setCalendarSelected', s.caldavCalendarSelectSchema, (req) => {
+    services.caldavSync.setCalendarSelected(req)
+    if (req.selected) services.syncManager.syncNow()
+  })
+  handle('caldav:setCalendarPerson', s.caldavCalendarPersonSchema, (req) =>
+    services.calendars.setCalendarPerson(req.calendarId, req.personId)
+  )
   handle('sync:now', null, () => services.syncManager.syncNow())
   handle('sync:getStatus', null, () => services.syncManager.getStatus())
 

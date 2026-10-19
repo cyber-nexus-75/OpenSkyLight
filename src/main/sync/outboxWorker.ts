@@ -3,8 +3,10 @@ import { DateTime } from 'luxon'
 import type { AppDb } from '../db/client'
 import { calendars, eventPeople, events } from '../db/schema'
 import type { GoogleSync } from './googleSync'
+import type { CalDavSync } from './caldavSync'
 import { httpStatus } from './googleSync'
 import { instanceProviderId, rowToGResource } from './googleMap'
+import { ConflictError } from './caldavClient'
 
 type EventRow = typeof events.$inferSelect
 
@@ -16,9 +18,10 @@ type EventRow = typeof events.$inferSelect
 export function createOutboxWorker(deps: {
   db: AppDb
   sync: GoogleSync
+  caldav?: CalDavSync
   onConflict: (title: string) => void
 }) {
-  const { db, sync } = deps
+  const { db, sync, caldav } = deps
   // transient retry state, in memory only
   const retries = new Map<string, { attempts: number; nextAtMs: number }>()
 
@@ -157,6 +160,51 @@ export function createOutboxWorker(deps: {
         }
       }
     }
+    // CalDAV calendars share the same dirty-flag outbox
+    if (caldav) {
+      const davCals = db
+        .select()
+        .from(calendars)
+        .where(and(eq(calendars.provider, 'caldav'), isNull(calendars.deletedAt), eq(calendars.readOnly, false)))
+        .all()
+      for (const cal of davCals) {
+        const dirtyRows = db
+          .select()
+          .from(events)
+          .where(and(eq(events.calendarId, cal.id), eq(events.dirty, true)))
+          .orderBy(asc(events.updatedAt))
+          .all()
+        dirtyRows.sort((a, b) => Number(a.recurringEventId !== null) - Number(b.recurringEventId !== null))
+        for (const row of dirtyRows) {
+          const retry = retries.get(row.id)
+          if (retry && retry.nextAtMs > nowMs) continue
+          try {
+            await caldav.pushRow(cal, row)
+            finishRow(row, {})
+            pushedAny = true
+          } catch (err) {
+            if (err instanceof ConflictError) {
+              // 412: changed on the server while we held a local edit.
+              // Last writer wins, mirroring the Google path; drop our etag so the
+              // next pull re-evaluates remote state, and surface the conflict.
+              db.update(events).set({ etag: null }).where(eq(events.id, row.id)).run()
+              deps.onConflict(row.title)
+              pushedAny = true
+            } else {
+              const attempts = (retry?.attempts ?? 0) + 1
+              const backoffMs = Math.min(2 ** attempts * 30_000, 30 * 60_000)
+              retries.set(row.id, { attempts, nextAtMs: nowMs + backoffMs })
+              db.update(calendars)
+                .set({ syncError: err instanceof Error ? err.message : 'push failed' })
+                .where(eq(calendars.id, cal.id))
+                .run()
+              break
+            }
+          }
+        }
+      }
+    }
+
     return pushedAny
   }
 

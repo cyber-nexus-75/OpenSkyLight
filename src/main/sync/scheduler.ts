@@ -5,10 +5,13 @@ import type { GoogleAuth } from './googleAuth'
 import type { GoogleSync } from './googleSync'
 import { httpStatus } from './googleSync'
 import type { IcsSync } from './icsSync'
+import type { CalDavSync } from './caldavSync'
 import type { OutboxWorker } from './outboxWorker'
+import type { SettingsService } from '../services/settingsService'
 
-const GOOGLE_INTERVAL_MS = 60_000
+const TICK_MS = 60_000
 const ICS_EVERY_N_TICKS = 30 // ≈ every 30 minutes
+const DEFAULT_INTERVAL_MINUTES = 15
 
 export interface SyncStatus {
   state: 'idle' | 'syncing' | 'error'
@@ -20,11 +23,13 @@ export function createSyncManager(deps: {
   db: AppDb
   auth: GoogleAuth
   google: GoogleSync
+  caldav?: CalDavSync
   outbox: OutboxWorker
   ics: IcsSync
+  settings?: Pick<SettingsService, 'getAll'>
   broadcast: (channel: string, payload: unknown) => void
 }) {
-  const { db, auth, google, outbox, ics, broadcast } = deps
+  const { db, auth, google, caldav, outbox, ics, broadcast } = deps
   let running = false
   let state: SyncStatus['state'] = 'idle'
   let lastError: string | null = null
@@ -71,7 +76,24 @@ export function createSyncManager(deps: {
         }
       }
 
-      // 3. ICS feeds on the slow cadence
+      // 3. CalDAV calendars (Nextcloud) — etag-report pull keeps polling cheap
+      if (caldav) {
+        const davCals = db
+          .select()
+          .from(calendars)
+          .where(and(eq(calendars.provider, 'caldav'), isNull(calendars.deletedAt)))
+          .all()
+        for (const cal of davCals) {
+          try {
+            anyChange = (await caldav.pullCalendar(cal)) || anyChange
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'CalDAV sync failed'
+            anyError = message
+            db.update(calendars).set({ syncError: message }).where(eq(calendars.id, cal.id)).run()
+          }
+        }
+      }
+      // 4. ICS feeds on the slow cadence
       if (opts.ics) {
         const icsCals = db
           .select()
@@ -95,18 +117,26 @@ export function createSyncManager(deps: {
     }
   }
 
+  function intervalTicks(): number {
+    const minutes = deps.settings?.getAll().syncIntervalMinutes ?? DEFAULT_INTERVAL_MINUTES
+    return Math.max(1, Math.round((minutes * 60_000) / TICK_MS))
+  }
+
   function start(): void {
     if (timer) return
     // first run shortly after boot, with ICS included
     setTimeout(() => void tick({ ics: true }), 3_000)
-    timer = setInterval(() => {
-      tickCount += 1
-      void tick({ ics: tickCount % ICS_EVERY_N_TICKS === 0 })
-    }, GOOGLE_INTERVAL_MS)
+    const scheduleNext = (): void => {
+      timer = setTimeout(() => {
+        tickCount += 1
+        void tick({ ics: tickCount % ICS_EVERY_N_TICKS === 0 }).finally(() => scheduleNext())
+      }, intervalTicks() * TICK_MS)
+    }
+    scheduleNext()
   }
 
   function stop(): void {
-    if (timer) clearInterval(timer)
+    if (timer) clearTimeout(timer)
     timer = null
   }
 

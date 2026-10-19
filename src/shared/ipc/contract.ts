@@ -80,6 +80,48 @@ export type IpcContract = {
   }
 
   'ics:add': { req: { url: string; name: string; color: string }; res: CalendarDto }
+  'caldav:getStatus': {
+    req: void
+    res: {
+      accounts: {
+        id: string
+        baseUrl: string
+        username: string
+        displayName: string | null
+        error: string | null
+      }[]
+    }
+  }
+  'caldav:connect': {
+    req: { baseUrl: string; username: string; password: string }
+    res: { accountId: string; displayName: string | null }
+  }
+  'caldav:disconnect': { req: { accountId: string }; res: void }
+  'caldav:listRemoteCalendars': {
+    req: { accountId: string }
+    res: {
+      url: string
+      name: string
+      color: string
+      readOnly: boolean
+      selected: boolean
+      personId: string | null
+    }[]
+  }
+  'caldav:setCalendarSelected': {
+    req: {
+      accountId: string
+      calendarUrl: string
+      name: string
+      color: string
+      readOnly: boolean
+      selected: boolean
+      /** per-person mapping: null = shared family calendar */
+      personId: string | null
+    }
+    res: void
+  }
+  'caldav:setCalendarPerson': { req: { calendarId: string; personId: string | null }; res: CalendarDto }
 
   'chores:list': { req: void; res: ChoreDto[] }
   'chores:create': { req: ChoreCreateInput; res: ChoreDto }

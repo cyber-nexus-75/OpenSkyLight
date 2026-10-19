@@ -155,7 +155,8 @@ export const settingsPatchSchema = z.object({
       sleep: z.object({ enabled: z.boolean(), start: z.string(), end: z.string() }).optional(),
       screensaver: z.object({ folder: z.string().nullable(), idleMinutes: z.number().int().min(1).max(120) }).optional(),
       launchOnStartup: z.boolean().optional(),
-      companion: z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65535) }).optional()
+      companion: z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65535) }).optional(),
+      syncIntervalMinutes: z.number().int().min(5).max(1440).optional()
     })
     .strict()
 })
@@ -183,6 +184,24 @@ export const icsAddSchema = z.object({
   url: z.string().trim().url().max(2000),
   name: z.string().trim().min(1).max(80),
   color: hexColor
+})
+export const caldavConnectSchema = z.object({
+  baseUrl: z.string().trim().url().max(2000).refine((u) => u.startsWith('https://') || u.startsWith('http://'), 'Server URL must be http(s)'),
+  username: z.string().trim().min(1).max(200),
+  password: z.string().min(1).max(400)
+})
+export const caldavCalendarSelectSchema = z.object({
+  accountId: id,
+  calendarUrl: z.string().trim().url().max(2000),
+  name: z.string().trim().min(1).max(120),
+  color: hexColor,
+  readOnly: z.boolean(),
+  selected: z.boolean(),
+  personId: id.nullable()
+})
+export const caldavCalendarPersonSchema = z.object({
+  calendarId: id,
+  personId: id.nullable()
 })
 
 const routine = z.enum(['morning', 'evening']).nullable()

@@ -22,11 +22,27 @@ export const googleAccounts = sqliteTable('google_accounts', {
   lastRefreshError: text('last_refresh_error')
 })
 
+export const caldavAccounts = sqliteTable('caldav_accounts', {
+  id: text('id').primaryKey(),
+  /** server base URL, e.g. https://cloud.example.com/remote.php/dav/ */
+  baseUrl: text('base_url').notNull(),
+  username: text('username').notNull(),
+  /** DPAPI/safeStorage-encrypted app password */
+  passwordEnc: blob('password_enc', { mode: 'buffer' }),
+  displayName: text('display_name'),
+  connectedAt: text('connected_at'),
+  lastError: text('last_error')
+})
+
 export const calendars = sqliteTable('calendars', {
   id: text('id').primaryKey(),
-  provider: text('provider', { enum: ['local', 'google', 'ics'] }).notNull().default('local'),
+  provider: text('provider', { enum: ['local', 'google', 'ics', 'caldav'] }).notNull().default('local'),
   googleAccountId: text('google_account_id').references(() => googleAccounts.id),
   googleCalendarId: text('google_calendar_id'),
+  caldavAccountId: text('caldav_account_id').references(() => caldavAccounts.id),
+  caldavCalendarUrl: text('caldav_calendar_url'),
+  /** per-person calendar mapping: events inherit this person's assignment */
+  personId: text('person_id').references(() => people.id),
   icsUrl: text('ics_url'),
   name: text('name').notNull(),
   color: text('color').notNull().default('#0091FF'),

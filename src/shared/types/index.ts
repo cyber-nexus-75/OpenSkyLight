@@ -30,7 +30,7 @@ export interface AvatarSetInput {
   data: string
 }
 
-export type CalendarProvider = 'local' | 'google' | 'ics'
+export type CalendarProvider = 'local' | 'google' | 'ics' | 'caldav'
 
 export interface CalendarDto {
   id: string
@@ -39,6 +39,8 @@ export interface CalendarDto {
   color: string
   readOnly: boolean
   visible: boolean
+  /** per-person calendar mapping (caldav): events inherit this person's assignment */
+  personId: string | null
 }
 
 export interface CalendarCreateInput {
@@ -309,6 +311,8 @@ export interface AppSettings {
   homeLayout: HomeTile[]
   /** LAN companion web app (phones editing lists/meals/chores) */
   companion: { enabled: boolean; port: number }
+  /** background sync cadence for calendar providers, in minutes */
+  syncIntervalMinutes: number
 }
 
 import { DEFAULT_HOME_LAYOUT } from '../home'
@@ -324,7 +328,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   screensaver: { folder: null, idleMinutes: 10 },
   launchOnStartup: false,
   homeLayout: DEFAULT_HOME_LAYOUT,
-  companion: { enabled: false, port: 8420 }
+  companion: { enabled: false, port: 8420 },
+  syncIntervalMinutes: 15
 }
 
 /** Touch-friendly person color palette (Skylight-style) */

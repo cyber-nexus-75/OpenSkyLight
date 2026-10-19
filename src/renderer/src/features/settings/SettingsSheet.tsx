@@ -12,6 +12,9 @@ import {
   useChoreMutations,
   useChores,
   useAvatarMutations,
+  useCaldavMutations,
+  useCaldavRemoteCalendars,
+  useCaldavStatus,
   useCitySearch,
   useRedemptions,
   useRewardMutations,
@@ -288,6 +291,135 @@ function SyncStatusRow() {
   )
 }
 
+function CalDavSection() {
+  const { data: status } = useCaldavStatus()
+  const caldav = useCaldavMutations()
+  const { data: people = [] } = usePeople()
+  const [baseUrl, setBaseUrl] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [expandedAccount, setExpandedAccount] = useState<string | null>(null)
+  const { data: remoteCals = [], isLoading: remoteLoading } = useCaldavRemoteCalendars(expandedAccount)
+  if (!status) return null
+  const personOptions = [
+    { value: '', label: 'Shared (family)' },
+    ...people.map((p) => ({ value: p.id, label: p.name }))
+  ]
+  return (
+    <div>
+      <FieldLabel>Nextcloud / CalDAV</FieldLabel>
+      {status.accounts.length === 0 ? (
+        <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+          <p className="text-base font-semibold text-ink-soft">
+            Two-way sync with your Nextcloud (or any CalDAV server). Use a Nextcloud app
+            password (Settings → Security → Devices &amp; sessions) — not your login password.
+          </p>
+          <OskInput value={baseUrl} onChange={setBaseUrl} placeholder="https://cloud.example.com/remote.php/dav/" />
+          <OskInput value={username} onChange={setUsername} placeholder="Username" />
+          <OskInput value={password} onChange={setPassword} placeholder="App password" />
+          <BigButton
+            onClick={() =>
+              caldav.connect.mutate(
+                { baseUrl: baseUrl.trim(), username: username.trim(), password },
+                {
+                  onSuccess: () => {
+                    setBaseUrl('')
+                    setUsername('')
+                    setPassword('')
+                  }
+                }
+              )
+            }
+            disabled={!baseUrl.trim() || !username.trim() || !password}
+          >
+            {caldav.connect.isPending ? 'Connecting…' : 'Add CalDAV account'}
+          </BigButton>
+          {caldav.connect.isError && (
+            <p className="text-sm font-bold text-ember-deep">{caldav.connect.error.message}</p>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {status.accounts.map((account) => (
+            <div key={account.id} className="rounded-2xl bg-paper-deep/50 p-3">
+              <div className="flex items-center gap-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-lg font-bold">{account.username}</span>
+                  <span className="block truncate text-sm font-bold text-ink-faint">{account.baseUrl}</span>
+                  {account.error && <span className="block text-sm font-bold text-ember-deep">{account.error}</span>}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setExpandedAccount(expandedAccount === account.id ? null : account.id)}
+                  className="pressable rounded-full border-2 border-line bg-card px-4 py-1.5 text-sm font-bold text-ink-soft"
+                >
+                  {expandedAccount === account.id ? 'Hide calendars' : 'Choose calendars'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => caldav.disconnect.mutate({ accountId: account.id })}
+                  className="pressable rounded-full border-2 border-ember-soft px-4 py-1.5 text-sm font-bold text-ember-deep"
+                >
+                  Disconnect
+                </button>
+              </div>
+              {expandedAccount === account.id && (
+                <div className="mt-3 flex flex-col gap-2">
+                  {remoteLoading && <p className="text-sm font-bold text-ink-faint">Loading calendars…</p>}
+                  {remoteCals.map((rc) => (
+                    <div key={rc.url} className="flex items-center gap-3 rounded-xl bg-card px-3 py-2">
+                      <span className="h-5 w-5 shrink-0 rounded-full" style={{ backgroundColor: rc.color }} />
+                      <span className="min-w-0 flex-1 truncate text-base font-bold">{rc.name}</span>
+                      <select
+                        className="rounded-xl border-2 border-line bg-card px-2 py-1 text-sm font-bold text-ink-soft"
+                        value={rc.personId ?? ''}
+                        onChange={(e) => {
+                          const personId = e.target.value || null
+                          caldav.setCalendarSelected.mutate({
+                            accountId: account.id,
+                            calendarUrl: rc.url,
+                            name: rc.name,
+                            color: rc.color,
+                            readOnly: rc.readOnly,
+                            selected: true,
+                            personId
+                          })
+                        }}
+                        aria-label={`Map ${rc.name} to a person`}
+                      >
+                        {personOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <Toggle
+                        checked={rc.selected}
+                        onChange={(selected) =>
+                          caldav.setCalendarSelected.mutate({
+                            accountId: account.id,
+                            calendarUrl: rc.url,
+                            name: rc.name,
+                            color: rc.color,
+                            readOnly: rc.readOnly,
+                            selected,
+                            personId: rc.personId
+                          })
+                        }
+                        label={`Sync ${rc.name}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function GoogleSection() {
   const { data: status } = useGoogleStatus()
   const google = useGoogleMutations()
@@ -463,6 +595,7 @@ function CalendarsTab() {
     <div className="flex flex-col gap-6">
       <SyncStatusRow />
       <GoogleSection />
+      <CalDavSection />
       <IcsSection />
       <div>
         <FieldLabel>Calendars on this display</FieldLabel>
@@ -1232,6 +1365,19 @@ function GeneralTab() {
           options={[
             { value: '0', label: 'Sunday' },
             { value: '1', label: 'Monday' }
+          ]}
+        />
+      </div>
+      <div>
+        <FieldLabel>Calendar sync interval</FieldLabel>
+        <SegmentedControl
+          value={String(settings.syncIntervalMinutes) as '5' | '15' | '30' | '60'}
+          onChange={(v) => mutation.mutate({ syncIntervalMinutes: Number(v) })}
+          options={[
+            { value: '5', label: '5 min' },
+            { value: '15', label: '15 min' },
+            { value: '30', label: '30 min' },
+            { value: '60', label: '1 hour' }
           ]}
         />
       </div>

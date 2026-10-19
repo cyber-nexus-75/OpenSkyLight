@@ -155,6 +155,55 @@ export function useGoogleMutations() {
   }
 }
 
+export function useCaldavStatus() {
+  return useQuery({
+    queryKey: ['caldavStatus'],
+    queryFn: () => ipcInvoke('caldav:getStatus', undefined),
+    staleTime: 30_000
+  })
+}
+
+export function useCaldavRemoteCalendars(accountId: string | null) {
+  return useQuery({
+    queryKey: ['caldavRemoteCalendars', accountId],
+    queryFn: () => ipcInvoke('caldav:listRemoteCalendars', { accountId: accountId! }),
+    enabled: accountId !== null,
+    staleTime: 60_000
+  })
+}
+
+export function useCaldavMutations() {
+  const calendarKeys = [['caldavStatus'], ['caldavRemoteCalendars'], ['calendars'], ['occurrences'], ['syncStatus']]
+  return {
+    connect: useInvalidatingMutation(
+      (input: { baseUrl: string; username: string; password: string }) =>
+        ipcInvoke('caldav:connect', input),
+      calendarKeys
+    ),
+    disconnect: useInvalidatingMutation(
+      (input: { accountId: string }) => ipcInvoke('caldav:disconnect', input),
+      calendarKeys
+    ),
+    setCalendarSelected: useInvalidatingMutation(
+      (input: {
+        accountId: string
+        calendarUrl: string
+        name: string
+        color: string
+        readOnly: boolean
+        selected: boolean
+        personId: string | null
+      }) => ipcInvoke('caldav:setCalendarSelected', input),
+      calendarKeys
+    ),
+    setCalendarPerson: useInvalidatingMutation(
+      (input: { calendarId: string; personId: string | null }) =>
+        ipcInvoke('caldav:setCalendarPerson', input),
+      [['calendars'], ['occurrences']]
+    )
+  }
+}
+
 export function useIcsMutations() {
   return {
     add: useInvalidatingMutation(

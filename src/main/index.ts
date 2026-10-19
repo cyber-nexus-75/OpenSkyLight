@@ -31,6 +31,8 @@ import { createCameraService } from './services/cameraService'
 import { createBirdNetService } from './services/birdnetService'
 import { createGoogleAuth } from './sync/googleAuth'
 import { createGoogleSync } from './sync/googleSync'
+import { createCalDavAuth } from './sync/caldavAuth'
+import { createCalDavSync } from './sync/caldavSync'
 import { createOutboxWorker } from './sync/outboxWorker'
 import { createIcsSync } from './sync/icsSync'
 import { createSyncManager } from './sync/scheduler'
@@ -65,9 +67,12 @@ if (!gotLock) {
     const choresService = createChoresService(db, deviceTz)
     const googleAuth = createGoogleAuth(db, settings)
     const googleSync = createGoogleSync({ db, auth: googleAuth, deviceTz })
+    const caldavAuth = createCalDavAuth({ db, settings })
+    const caldavSync = createCalDavSync({ db, auth: caldavAuth, deviceTz })
     const outbox = createOutboxWorker({
       db,
       sync: googleSync,
+      caldav: caldavSync,
       onConflict: (title) => broadcast('push:syncConflict', { title })
     })
     const icsSync = createIcsSync({ db, deviceTz })
@@ -75,8 +80,10 @@ if (!gotLock) {
       db,
       auth: googleAuth,
       google: googleSync,
+      caldav: caldavSync,
       outbox,
       ics: icsSync,
+      settings,
       broadcast
     })
 
@@ -101,6 +108,8 @@ if (!gotLock) {
       events: createEventService(db),
       googleAuth,
       googleSync,
+      caldavAuth,
+      caldavSync,
       icsSync,
       syncManager,
       weather: createWeatherService(settings),

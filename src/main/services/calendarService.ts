@@ -14,7 +14,8 @@ function toDto(row: typeof calendars.$inferSelect): CalendarDto {
     name: row.name,
     color: row.color,
     readOnly: row.readOnly,
-    visible: row.visible
+    visible: row.visible,
+    personId: row.personId
   }
 }
 
@@ -77,7 +78,19 @@ export function createCalendarService(db: AppDb) {
     })
   }
 
-  return { list, create, update, remove }
+  /** Per-person calendar mapping (CalDAV): events inherit this person's assignment. */
+  function setCalendarPerson(calendarId: string, personId: string | null): CalendarDto {
+    const result = db
+      .update(calendars)
+      .set({ personId })
+      .where(and(eq(calendars.id, calendarId), isNull(calendars.deletedAt)))
+      .run()
+    if (result.changes === 0) throw notFound('Calendar')
+    const [row] = db.select().from(calendars).where(eq(calendars.id, calendarId)).all()
+    return toDto(row)
+  }
+
+  return { list, create, update, remove, setCalendarPerson }
 }
 
 export type CalendarService = ReturnType<typeof createCalendarService>

@@ -193,6 +193,21 @@ const MIGRATIONS: string[] = [
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+  `,
+  // 002 — CalDAV accounts (Nextcloud) and calendar-to-person mapping
+  `
+  CREATE TABLE caldav_accounts (
+    id TEXT PRIMARY KEY,
+    base_url TEXT NOT NULL,
+    username TEXT NOT NULL,
+    password_enc BLOB,
+    display_name TEXT,
+    connected_at TEXT,
+    last_error TEXT
+  );
+  ALTER TABLE calendars ADD COLUMN caldav_account_id TEXT REFERENCES caldav_accounts(id);
+  ALTER TABLE calendars ADD COLUMN caldav_calendar_url TEXT;
+  ALTER TABLE calendars ADD COLUMN person_id TEXT REFERENCES people(id);
   `
 ]
 
