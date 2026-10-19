@@ -11,6 +11,7 @@ import {
   useCompanionStatus,
   useChoreMutations,
   useChores,
+  useAvatarMutations,
   useCitySearch,
   useRedemptions,
   useRewardMutations,
@@ -33,7 +34,8 @@ import { useUi } from '../../stores/uiStore'
 import { BigButton, Dialog, FieldLabel, SegmentedControl, Sheet, Toggle } from '../../components/ui'
 import { OskInput } from '../../components/Osk'
 import { PlusIcon } from '../../components/icons'
-import { initials, textOn } from '../../lib/format'
+import { Avatar } from '../../components/Avatar'
+import { textOn } from '../../lib/format'
 import QRCode from 'qrcode'
 
 type Tab = 'family' | 'calendars' | 'chores' | 'general'
@@ -116,6 +118,52 @@ function ColorGrid({ value, onChange }: { value: string; onChange: (color: strin
   )
 }
 
+/** Square-crops the picked photo to 256x256 via canvas, then uploads it as base64 PNG. */
+async function processAvatarFile(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file)
+  const side = Math.min(bitmap.width, bitmap.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')!
+  ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256)
+  bitmap.close()
+  return canvas.toDataURL('image/png').split(',')[1]!
+}
+
+function AvatarPicker({ person }: { person: PersonDto }) {
+  const avatarMutations = useAvatarMutations()
+  const pick = (): void => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/png,image/jpeg'
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (file) {
+        void processAvatarFile(file)
+          .then((data) => avatarMutations.set.mutate({ personId: person.id, data }))
+          .catch(() => undefined)
+      }
+    }
+    input.click()
+  }
+  return (
+    <div className="flex items-center gap-4">
+      <Avatar person={person} className="h-20 w-20 shrink-0 rounded-full text-2xl" />
+      <div className="flex flex-col gap-2">
+        <BigButton variant="ghost" onClick={pick}>
+          Change photo
+        </BigButton>
+        {person.avatarUrl && (
+          <BigButton variant="ghost" onClick={() => avatarMutations.remove.mutate({ id: person.id })}>
+            Remove photo
+          </BigButton>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function FamilyTab() {
   const { data: people = [] } = usePeople()
   const mutations = usePeopleMutations()
@@ -153,12 +201,7 @@ function FamilyTab() {
           onClick={() => openEditor(p)}
           className="pressable flex items-center gap-4 rounded-2xl bg-paper-deep/50 p-3 text-left hover:bg-paper-deep"
         >
-          <span
-            className="flex h-14 w-14 items-center justify-center rounded-full text-lg font-extrabold"
-            style={{ backgroundColor: p.color, color: textOn(p.color) }}
-          >
-            {initials(p.name)}
-          </span>
+          <Avatar person={p} className="h-14 w-14 shrink-0 rounded-full text-lg" />
           <span className="flex-1">
             <span className="block text-xl font-bold">{p.name}</span>
             <span className="block text-sm font-bold text-ink-faint capitalize">{p.role}</span>
@@ -177,6 +220,7 @@ function FamilyTab() {
         title={editing === 'new' ? 'Add family member' : 'Edit family member'}
       >
         <div className="flex flex-col gap-4">
+          {editing !== 'new' && editing && <AvatarPicker person={editing} />}
           <div>
             <FieldLabel>Name</FieldLabel>
             <OskInput value={name} onChange={setName} placeholder="Name" autoFocus={editing === 'new'} />

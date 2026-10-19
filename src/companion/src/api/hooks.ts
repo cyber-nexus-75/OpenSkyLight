@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ChoreCreateInput, ChoreUpdateInput } from '@shared/types'
+import type { AvatarSetInput, ChoreCreateInput, ChoreUpdateInput } from '@shared/types'
 import { rpc } from './client'
 
 /** Phone tabs get suspended constantly — focus/reconnect refetch is the real
@@ -89,4 +89,8 @@ export function useChoreMutations() {
       keys
     )
   }
+}
+
+export function useAvatarMutation() {
+  return useInvalidatingMutation((input: AvatarSetInput) => rpc('people:setAvatar', input), [['people']])
 }

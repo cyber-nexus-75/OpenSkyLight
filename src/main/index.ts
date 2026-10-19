@@ -4,6 +4,7 @@ import { DateTime } from 'luxon'
 import { openDatabase } from './db/client'
 import { createSettingsService } from './services/settingsService'
 import { createPeopleService } from './services/peopleService'
+import { createAvatarService } from './services/avatarService'
 import { createCalendarService } from './services/calendarService'
 import { createEventService } from './services/eventService'
 import {
@@ -56,7 +57,8 @@ if (!gotLock) {
     const deviceTz = (): string => DateTime.local().zoneName ?? 'UTC'
 
     const settings = createSettingsService(db)
-    const kiosk = createKiosk({ settings, broadcast })
+    const avatars = createAvatarService({ rootDir: app.getPath('userData') })
+    const kiosk = createKiosk({ settings, broadcast, avatars })
     const updater = createUpdater({ broadcast })
     const cameraService = createCameraService(settings)
     app.on('will-quit', () => cameraService.shutdown())
@@ -86,13 +88,15 @@ if (!gotLock) {
       tokens: createCompanionTokens(settings),
       dispatch: (channel, payload) => dispatch(services, channelTable, channel, payload, { gate: 'none' }),
       version: app.getVersion(),
-      staticRoot: join(__dirname, '../companion')
+      staticRoot: join(__dirname, '../companion'),
+      avatarBytes: (personId) => avatars.get(personId)
     })
     app.on('will-quit', () => companion.shutdown())
 
     const services: Services = {
       settings,
       people: createPeopleService(db),
+      avatars,
       calendars: createCalendarService(db),
       events: createEventService(db),
       googleAuth,

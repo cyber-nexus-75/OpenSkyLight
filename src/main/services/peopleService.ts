@@ -13,7 +13,8 @@ function toDto(row: typeof people.$inferSelect): PersonDto {
     name: row.name,
     color: row.color,
     role: row.role,
-    sortOrder: row.sortOrder
+    sortOrder: row.sortOrder,
+    avatarUrl: row.avatarPath ? `osl-avatar://${row.id}` : null
   }
 }
 
@@ -58,6 +59,18 @@ export function createPeopleService(db: AppDb) {
     return toDto(row)
   }
 
+  /** Flags whether the person has a stored avatar (the bytes live on disk, managed by AvatarService). */
+  function markAvatar(id: string, present: boolean): PersonDto {
+    const result = db
+      .update(people)
+      .set({ avatarPath: present ? '1' : null })
+      .where(and(eq(people.id, id), isNull(people.deletedAt)))
+      .run()
+    if (result.changes === 0) throw notFound('Person')
+    const [row] = db.select().from(people).where(eq(people.id, id)).all()
+    return toDto(row)
+  }
+
   function remove(id: string): void {
     const result = db
       .update(people)
@@ -67,7 +80,7 @@ export function createPeopleService(db: AppDb) {
     if (result.changes === 0) throw notFound('Person')
   }
 
-  return { list, create, update, remove }
+  return { list, create, update, markAvatar, remove }
 }
 
 export type PeopleService = ReturnType<typeof createPeopleService>

@@ -5,7 +5,7 @@ import { useUi, ZONE } from '../../stores/uiStore'
 import { SegmentedControl, IconButton } from '../../components/ui'
 import { ChevronLeftIcon, ChevronRightIcon, GearIcon, PlusIcon } from '../../components/icons'
 import { WeatherButton } from '../weather/WeatherHeader'
-import { initials, textOn } from '../../lib/format'
+import { Avatar } from '../../components/Avatar'
 import type { CalendarViewKind } from '@shared/types'
 
 function useNow(): DateTime {
@@ -89,12 +89,11 @@ export function Header() {
                 aria-label={`${hidden ? 'Show' : 'Hide'} ${p.name}`}
                 title={p.name}
                 onClick={() => togglePerson(p.id)}
-                className={`pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-extrabold ring-2 ring-paper transition-all ${
+                className={`pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full ring-2 ring-paper transition-all ${
                   hidden ? 'opacity-35 grayscale' : 'shadow-card'
                 }`}
-                style={{ backgroundColor: p.color, color: textOn(p.color) }}
               >
-                {initials(p.name)}
+                <Avatar person={p} className="h-11 w-11 rounded-full text-sm" />
               </button>
             )
           })}

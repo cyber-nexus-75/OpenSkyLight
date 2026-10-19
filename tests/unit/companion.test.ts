@@ -108,7 +108,8 @@ describe('companionServer', () => {
       tokens,
       dispatch: dispatchImpl ?? (async () => ({ ok: true, data: 'dispatched' })),
       version: '0.0.0-test',
-      staticRoot
+      staticRoot,
+      avatarBytes: () => null
     })
     server.applySettings()
     // wait for listen
@@ -142,6 +143,37 @@ describe('companionServer', () => {
     })
     expect(ok.status).toBe(200)
     expect(await ok.json()).toEqual({ ok: true, data: 'dispatched' })
+  })
+
+  it('serves avatar bytes only with a valid token', async () => {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
+    staticRoot = mkdtempSync(join(tmpdir(), 'osl-companion-'))
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html>')
+    const settings = settingsStub({ enabled: true, port: 0 })
+    const tokens = createCompanionTokens(settings)
+    server = createCompanionServer({
+      settings,
+      tokens,
+      dispatch: async () => ({ ok: true, data: null }),
+      version: '0.0.0-test',
+      staticRoot,
+      avatarBytes: (personId) => (personId === 'p1' ? png : null)
+    })
+    server.applySettings()
+    for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
+    const port = Number(new URL(server.issueToken().url).port)
+    const base = `http://127.0.0.1:${port}`
+    const token = server.issueToken().url.split('#t=')[1]
+
+    const noToken = await fetch(`${base}/api/avatar/p1`)
+    expect(noToken.status).toBe(401)
+    const badToken = await fetch(`${base}/api/avatar/p1?t=wrong`)
+    expect(badToken.status).toBe(401)
+    const missing = await fetch(`${base}/api/avatar/nobody?t=${token}`)
+    expect(missing.status).toBe(404)
+    const ok = await fetch(`${base}/api/avatar/p1?t=${token}`)
+    expect(ok.status).toBe(200)
+    expect(Buffer.from(await ok.arrayBuffer()).equals(png)).toBe(true)
   })
 
   it('rejects channels outside the allowlist even with a valid token', async () => {

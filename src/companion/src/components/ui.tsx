@@ -1,4 +1,11 @@
 import type { ReactNode } from 'react'
+import { getToken } from '../api/client'
+
+/** Rewrites osl-avatar://<personId> to the token-authenticated companion avatar endpoint. */
+function companionAvatarUrl(avatarUrl: string): string {
+  const personId = avatarUrl.replace(/^osl-avatar:\/\//, '')
+  return `/api/avatar/${personId}?t=${encodeURIComponent(getToken() ?? '')}`
+}
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <div className={`rounded-card bg-card p-4 shadow-card ${className}`}>{children}</div>
@@ -59,14 +66,30 @@ export function textOn(hex: string): string {
   return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? '#34302a' : '#ffffff'
 }
 
-export function PersonAvatar({ name, color, size = 'md' }: { name: string; color: string; size?: 'sm' | 'md' }) {
+export function PersonAvatar({
+  name,
+  color,
+  size = 'md',
+  avatarUrl
+}: {
+  name: string
+  color: string
+  size?: 'sm' | 'md'
+  /** osl-avatar:// URL from PersonDto; rewritten to the token-authenticated companion endpoint. */
+  avatarUrl?: string | null
+}) {
   const cls = size === 'sm' ? 'h-6 w-6 text-[10px]' : 'h-9 w-9 text-sm'
+  const photoUrl = avatarUrl ? companionAvatarUrl(avatarUrl) : null
   return (
     <span
-      className={`flex ${cls} shrink-0 items-center justify-center rounded-full font-extrabold`}
+      className={`flex ${cls} shrink-0 items-center justify-center overflow-hidden rounded-full font-extrabold`}
       style={{ backgroundColor: color, color: textOn(color) }}
     >
-      {initials(name)}
+      {photoUrl ? (
+        <img src={photoUrl} alt={name} className={`h-full w-full object-cover text-[0px]`} />
+      ) : (
+        initials(name)
+      )}
     </span>
   )
 }

@@ -5,8 +5,10 @@ import { ZodError } from 'zod'
 import type { IpcChannel, IpcContract, IpcResult } from '@shared/ipc/contract'
 import * as s from '@shared/ipc/schemas'
 import { AppError } from '../services/errors'
+import { decodeBase64Image } from '../services/avatarService'
 import type { SettingsService } from '../services/settingsService'
 import type { PeopleService } from '../services/peopleService'
+import type { AvatarService } from '../services/avatarService'
 import type { CalendarService } from '../services/calendarService'
 import type { EventService } from '../services/eventService'
 import type { GoogleAuth } from '../sync/googleAuth'
@@ -29,6 +31,7 @@ import type { CompanionServer } from '../companion/companionServer'
 export interface Services {
   settings: SettingsService
   people: PeopleService
+  avatars: AvatarService
   calendars: CalendarService
   events: EventService
   googleAuth: GoogleAuth
@@ -67,6 +70,8 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'people:create',
   'people:update',
   'people:delete',
+  'people:setAvatar',
+  'people:removeAvatar',
   'chores:create',
   'chores:update',
   'chores:delete',
@@ -88,6 +93,8 @@ const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'people:create': 'people',
   'people:update': 'people',
   'people:delete': 'people',
+  'people:setAvatar': 'people',
+  'people:removeAvatar': 'people',
   'calendars:create': 'calendars',
   'calendars:update': 'calendars',
   'calendars:delete': 'calendars',
@@ -195,6 +202,15 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('people:create', s.personCreateSchema, (req) => services.people.create(req))
   handle('people:update', s.personUpdateSchema, (req) => services.people.update(req))
   handle('people:delete', s.idSchema, (req) => services.people.remove(req.id))
+  handle('people:setAvatar', s.avatarSetSchema, (req) => {
+    const bytes = decodeBase64Image(req.data)
+    services.avatars.set(req.personId, bytes)
+    return services.people.markAvatar(req.personId, true)
+  })
+  handle('people:removeAvatar', s.idSchema, (req) => {
+    services.avatars.remove(req.id)
+    return services.people.markAvatar(req.id, false)
+  })
 
   handle('calendars:list', null, () => services.calendars.list())
   handle('calendars:create', s.calendarCreateSchema, (req) => services.calendars.create(req))

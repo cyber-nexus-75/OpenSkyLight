@@ -18,6 +18,11 @@ export const personUpdateSchema = z.object({
   role: z.enum(['parent', 'child']).optional(),
   sortOrder: z.number().int().optional()
 })
+export const avatarSetSchema = z.object({
+  personId: id,
+  // base64-encoded PNG/JPEG image bytes
+  data: z.string().min(1)
+})
 
 export const calendarCreateSchema = z.object({
   name: z.string().trim().min(1).max(80),

@@ -43,7 +43,7 @@ export function AgendaPage() {
                       .map((id) => people.find((p) => p.id === id))
                       .filter((p) => p !== undefined)
                       .map((p) => (
-                        <PersonAvatar key={p.id} name={p.name} color={p.color} size="sm" />
+                        <PersonAvatar key={p.id} name={p.name} color={p.color} avatarUrl={p.avatarUrl} size="sm" />
                       ))}
                   </span>
                 </div>

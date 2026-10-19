@@ -23,7 +23,8 @@ import { startAlarm, stopAlarm } from '../../lib/alarm'
 import { weatherIcon } from '../weather/WeatherHeader'
 import { SLOT_META } from '../meals/Meals'
 import { ZONE } from '../../stores/uiStore'
-import { formatTime, initials, textOn } from '../../lib/format'
+import { formatTime } from '../../lib/format'
+import { Avatar } from '../../components/Avatar'
 import { occurrenceColor } from '../../lib/colors'
 import { CheckIcon } from '../../components/icons'
 
@@ -177,12 +178,7 @@ export function ChoresProgressTile({ compact }: TileProps) {
             const pct = mine.length === 0 ? 0 : Math.round((done / mine.length) * 100)
             return (
               <div key={p.id} className="flex items-center gap-2">
-                <span
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold"
-                  style={{ backgroundColor: p.color, color: textOn(p.color) }}
-                >
-                  {initials(p.name)}
-                </span>
+                <Avatar person={p} className="h-7 w-7 shrink-0 rounded-full text-[10px]" />
                 <span className="min-w-0 flex-1">
                   {!compact && <span className="block truncate text-xs font-bold">{p.name}</span>}
                   <span className="block h-2.5 overflow-hidden rounded-full bg-paper-deep">
@@ -218,12 +214,7 @@ export function StarBalancesTile({ compact }: TileProps) {
         <div className="flex min-h-0 flex-1 flex-col justify-center gap-1.5 overflow-hidden">
           {shown.map((p) => (
             <div key={p.id} className="flex items-center gap-2">
-              <span
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold"
-                style={{ backgroundColor: p.color, color: textOn(p.color) }}
-              >
-                {initials(p.name)}
-              </span>
+              <Avatar person={p} className="h-7 w-7 shrink-0 rounded-full text-[10px]" />
               {!compact && <span className="min-w-0 flex-1 truncate text-sm font-bold">{p.name}</span>}
               <span className={`font-extrabold text-ember-deep ${compact ? 'ml-auto text-sm' : 'text-base'}`}>
                 ★ {balances.find((b) => b.personId === p.id)?.balance ?? 0}

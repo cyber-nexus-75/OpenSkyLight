@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ipcInvoke } from './client'
 import type {
+  AvatarSetInput,
   CalendarCreateInput,
   CalendarUpdateInput,
   EventCreateInput,
@@ -80,6 +81,14 @@ export function usePeopleMutations() {
     create: useInvalidatingMutation((input: PersonCreateInput) => ipcInvoke('people:create', input), keys),
     update: useInvalidatingMutation((input: PersonUpdateInput) => ipcInvoke('people:update', input), keys),
     remove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('people:delete', input), keys)
+  }
+}
+
+export function useAvatarMutations() {
+  const keys = [['people'], ['occurrences']]
+  return {
+    set: useInvalidatingMutation((input: AvatarSetInput) => ipcInvoke('people:setAvatar', input), keys),
+    remove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('people:removeAvatar', input), keys)
   }
 }
 

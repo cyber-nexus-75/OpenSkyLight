@@ -3,7 +3,8 @@ import { DateTime } from 'luxon'
 import type { DayChoreDto, PersonDto } from '@shared/types'
 import { useBalances, useChoreMutations, useChoresDay, usePeople } from '../../api/hooks'
 import { useUi, ZONE } from '../../stores/uiStore'
-import { initials, isToday, textOn } from '../../lib/format'
+import { isToday, textOn } from '../../lib/format'
+import { Avatar } from '../../components/Avatar'
 import { CheckIcon, MoonIcon, SunIcon } from '../../components/icons'
 import { BigButton } from '../../components/ui'
 import { RewardsDialog } from './RewardsDialog'
@@ -75,12 +76,7 @@ function PersonColumn({ person, chores, date, canCheck }: { person: PersonDto; c
   return (
     <div className="flex min-h-0 w-80 shrink-0 flex-col rounded-card bg-paper-deep/40 p-3">
       <div className="mb-3 flex items-center gap-3">
-        <span
-          className="flex h-12 w-12 items-center justify-center rounded-full text-base font-extrabold"
-          style={{ backgroundColor: person.color, color: textOn(person.color) }}
-        >
-          {initials(person.name)}
-        </span>
+        <Avatar person={person} className="h-12 w-12 shrink-0 rounded-full text-base" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-xl font-bold">{person.name}</div>
           <div className="text-sm font-bold text-ink-faint">

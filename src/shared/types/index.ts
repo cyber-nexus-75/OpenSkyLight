@@ -6,6 +6,8 @@ export interface PersonDto {
   color: string
   role: PersonRole
   sortOrder: number
+  /** osl-avatar:// URL, or null when the person has no photo (renderer falls back to initials) */
+  avatarUrl: string | null
 }
 
 export interface PersonCreateInput {
@@ -20,6 +22,12 @@ export interface PersonUpdateInput {
   color?: string
   role?: PersonRole
   sortOrder?: number
+}
+
+/** Raw avatar upload: PNG/JPEG image bytes, base64-encoded. Main resizes to 256x256. */
+export interface AvatarSetInput {
+  personId: string
+  data: string
 }
 
 export type CalendarProvider = 'local' | 'google' | 'ics'

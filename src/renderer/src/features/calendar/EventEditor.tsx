@@ -7,7 +7,8 @@ import { useUi, ZONE, type EditorState } from '../../stores/uiStore'
 import { BigButton, Dialog, FieldLabel, Sheet, Toggle } from '../../components/ui'
 import { OskInput } from '../../components/Osk'
 import { DateField, TimeField } from '../../components/DateTimePickers'
-import { initials, textOn } from '../../lib/format'
+import { textOn } from '../../lib/format'
+import { Avatar } from '../../components/Avatar'
 import { useWeekStartsOn } from './useCalendarData'
 
 const WEEKDAY_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
@@ -230,10 +231,10 @@ function EditorSheet({ editor, onClose }: { editor: Exclude<EditorState, { mode:
                     style={on ? { backgroundColor: p.color, color: textOn(p.color) } : undefined}
                   >
                     <span
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-extrabold"
-                      style={{ backgroundColor: on ? 'rgba(255,255,255,0.3)' : p.color, color: on ? 'inherit' : textOn(p.color) }}
+                      className={`flex h-9 w-9 items-center justify-center overflow-hidden rounded-full text-sm font-extrabold ${on ? 'bg-white/30' : ''}`}
+                      style={{ backgroundColor: on ? undefined : p.color, color: on ? 'inherit' : textOn(p.color) }}
                     >
-                      {initials(p.name)}
+                      <Avatar person={p} className="h-9 w-9 rounded-full text-[0px]" textClassName="text-sm" />
                     </span>
                     {p.name}
                   </button>

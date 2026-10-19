@@ -123,6 +123,27 @@ try {
     await meal(2, 'dinner', 'Pizza Friday')
     await meal(-1, 'dinner', 'Spaghetti')
 
+    // avatars so the shots show real photos (solid-color circles generated on canvas)
+    const avatar = (person, hex) => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 256
+      canvas.height = 256
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = hex
+      ctx.beginPath()
+      ctx.arc(128, 128, 128, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 96px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(person.name[0], 128, 132)
+      return canvas.toDataURL('image/png').split(',')[1]
+    }
+    await inv('people:setAvatar', { personId: emma.id, data: avatar(emma, '#46A758') })
+    await inv('people:setAvatar', { personId: leo.id, data: avatar(leo, '#0091FF') })
+    await inv('people:setAvatar', { personId: mom.id, data: avatar(mom, '#E5484D') })
+    await inv('people:setAvatar', { personId: dad.id, data: avatar(dad, '#8E4EC6') })
     // weather location (live Open-Meteo fetch) — and 12h clock for the shots
     await inv('settings:set', { patch: { weather: { lat: 39.7392, lon: -104.9903, label: 'Denver' } } })
   })

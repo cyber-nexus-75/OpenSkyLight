@@ -4,14 +4,19 @@ import { join, resolve, extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DateTime } from 'luxon'
 import type { SettingsService } from '../services/settingsService'
+import type { AvatarService } from '../services/avatarService'
 import { isInSleepWindow } from '@shared/sleepWindow'
 
 const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'])
 const IDLE_POLL_MS = 5_000
 const SLEEP_POLL_MS = 5_000
 
-export function createKiosk(deps: { settings: SettingsService; broadcast: (ch: string, p: unknown) => void }) {
-  const { settings, broadcast } = deps
+export function createKiosk(deps: {
+  settings: SettingsService
+  broadcast: (ch: string, p: unknown) => void
+  avatars: Pick<AvatarService, 'get'>
+}) {
+  const { settings, broadcast, avatars } = deps
   let idleTimer: NodeJS.Timeout | null = null
   let sleepTimer: NodeJS.Timeout | null = null
   let screensaverOn = false
@@ -29,6 +34,18 @@ export function createKiosk(deps: { settings: SettingsService; broadcast: (ch: s
       // path-traversal guard: the resolved file must stay inside the folder
       if (!full.startsWith(resolve(folder))) return new Response('forbidden', { status: 403 })
       return net.fetch(pathToFileURL(full).toString())
+    })
+  }
+
+  /** Avatars are served through osl-avatar:// so the sandboxed renderer never touches the filesystem. */
+  function registerAvatarProtocol(): void {
+    protocol.handle('osl-avatar', (request) => {
+      const personId = new URL(request.url).hostname
+      const bytes = avatars.get(personId)
+      if (!bytes) return new Response('no avatar', { status: 404 })
+      return new Response(new Uint8Array(bytes), {
+        headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' }
+      })
     })
   }
 
@@ -97,6 +114,7 @@ export function createKiosk(deps: { settings: SettingsService; broadcast: (ch: s
 
   function start(): void {
     registerPhotoProtocol()
+    registerAvatarProtocol()
     registerBirdImageProtocol()
     blockerId = powerSaveBlocker.start('prevent-display-sleep')
 

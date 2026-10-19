@@ -31,6 +31,8 @@ export interface CompanionServerDeps {
   version: string
   /** Directory holding the built companion web app (out/companion). */
   staticRoot: string
+  /** Serves stored person avatar bytes (only reachable with a valid token). */
+  avatarBytes: (personId: string) => Buffer | null
 }
 
 /**
@@ -176,6 +178,26 @@ export function createCompanionServer(deps: CompanionServerDeps) {
         return
       }
       void handleRpc(req, res, rpcMatch[1])
+      return
+    }
+    const avatarMatch = url.split('?')[0].match(/^\/api\/avatar\/([A-Za-z0-9_-]+)$/) // token as query param: <img> tags cannot send headers
+    if (avatarMatch) {
+      if (req.method !== 'GET') {
+        res.writeHead(405).end()
+        return
+      }
+      const t = new URL(url, 'http://companion').searchParams.get('t') ?? ''
+      if (!deps.tokens.verify(t)) {
+        sendJson(res, 401, { ok: false, error: { code: 'UNAUTHORIZED', message: 'Not paired' } })
+        return
+      }
+      const bytes = deps.avatarBytes(avatarMatch[1])
+      if (!bytes) {
+        res.writeHead(404).end()
+        return
+      }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' })
+      res.end(bytes)
       return
     }
     if (url.startsWith('/api/')) {

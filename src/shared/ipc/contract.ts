@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  AvatarSetInput,
   CalendarCreateInput,
   CalendarDto,
   CalendarUpdateInput,
@@ -41,6 +42,8 @@ export type IpcContract = {
   'people:create': { req: PersonCreateInput; res: PersonDto }
   'people:update': { req: PersonUpdateInput; res: PersonDto }
   'people:delete': { req: { id: string }; res: void }
+  'people:setAvatar': { req: AvatarSetInput; res: PersonDto }
+  'people:removeAvatar': { req: { id: string }; res: PersonDto }
 
   'calendars:list': { req: void; res: CalendarDto[] }
   'calendars:create': { req: CalendarCreateInput; res: CalendarDto }

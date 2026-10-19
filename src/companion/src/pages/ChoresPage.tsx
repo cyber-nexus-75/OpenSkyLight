@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
 import type { ChoreDto, ChoreRoutine, PersonDto } from '@shared/types'
-import { useBalances, useChoreMutations, useChores, useChoresDay, usePeople } from '../api/hooks'
+import { useAvatarMutation, useBalances, useChoreMutations, useChores, useChoresDay, usePeople } from '../api/hooks'
 import { Card, CheckCircle, EmptyNote, GhostButton, PersonAvatar, PrimaryButton, TextInput } from '../components/ui'
 
 type Repeat = 'once' | 'daily' | 'weekly'
@@ -12,6 +12,18 @@ export function ChoresPage() {
   const { data: people = [] } = usePeople()
   const { data: balances = [] } = useBalances()
   const mutations = useChoreMutations()
+  const avatarMutation = useAvatarMutation()
+  const setAvatar = async (person: PersonDto, file: File): Promise<void> => {
+    const bitmap = await createImageBitmap(file)
+    const side = Math.min(bitmap.width, bitmap.height)
+    const canvas = document.createElement('canvas')
+    canvas.width = 256
+    canvas.height = 256
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256)
+    bitmap.close()
+    avatarMutation.mutate({ personId: person.id, data: canvas.toDataURL('image/png').split(',')[1]! })
+  }
   const [showForm, setShowForm] = useState(false)
   const [showManage, setShowManage] = useState(false)
 
@@ -30,7 +42,20 @@ export function ChoresPage() {
           return (
             <Card key={person.id}>
               <div className="mb-1 flex items-center gap-2.5">
-                <PersonAvatar name={person.name} color={person.color} />
+                <label className="relative">
+                  <PersonAvatar name={person.name} color={person.color} avatarUrl={person.avatarUrl} />
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                    aria-label={`Change ${person.name}'s photo`}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      e.target.value = ''
+                      if (file) void setAvatar(person, file)
+                    }}
+                  />
+                </label>
                 <h2 className="flex-1 truncate font-display text-xl font-semibold">{person.name}</h2>
                 <span className="text-sm font-extrabold text-ink-faint">
                   {done}/{theirs.length} · ★ {balanceOf(person.id)}
@@ -143,7 +168,7 @@ function NewChoreForm({
                 personId === p.id ? 'bg-ember text-white' : 'bg-paper-deep text-ink-soft'
               }`}
             >
-              <PersonAvatar name={p.name} color={p.color} size="sm" />
+              <PersonAvatar name={p.name} color={p.color} avatarUrl={p.avatarUrl} size="sm" />
               {p.name}
             </button>
           ))}
@@ -212,7 +237,7 @@ function ManageChoreRow({ chore, person }: { chore: ChoreDto; person: PersonDto 
   return (
     <Card className={chore.active ? '' : 'opacity-60'}>
       <div className="flex items-center gap-2.5">
-        {person && <PersonAvatar name={person.name} color={person.color} size="sm" />}
+        {person && <PersonAvatar name={person.name} color={person.color} avatarUrl={person.avatarUrl} size="sm" />}
         {editing ? (
           <form
             className="flex min-w-0 flex-1 gap-2"
