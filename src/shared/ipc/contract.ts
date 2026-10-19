@@ -160,6 +160,14 @@ export type IpcContract = {
   'camera:start': { req: { cameraId: string }; res: { wsUrl: string; sessionId: string } }
   /** Stop must present the session id from start — stale stops can't kill newer streams. */
   'camera:stop': { req: { sessionId: string }; res: void }
+  'unifi:getStatus': { req: void; res: { configured: boolean; host: string | null } }
+  'unifi:connect': { req: { host: string; apiKey: string }; res: { host: string } }
+  'unifi:disconnect': { req: void; res: void }
+  'unifi:listCameras': {
+    req: void
+    res: { id: string; name: string; model: string; online: boolean; imported: boolean }[]
+  }
+  'unifi:importCamera': { req: { unifiCameraId: string }; res: { cameraId: string } }
 
   'rss:getFeed': {
     req: { feedId: string }

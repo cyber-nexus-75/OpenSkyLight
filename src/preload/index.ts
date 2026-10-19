@@ -22,6 +22,7 @@ const ALLOWED_INVOKE_PREFIXES = [
   'kiosk:',
   'rss:',
   'camera:',
+  'unifi:',
   'companion:',
   'birdnet:'
 ]

@@ -185,6 +185,11 @@ export const icsAddSchema = z.object({
   name: z.string().trim().min(1).max(80),
   color: hexColor
 })
+export const unifiConnectSchema = z.object({
+  host: z.string().trim().min(1).max(200),
+  apiKey: z.string().trim().min(10).max(400)
+})
+export const unifiImportSchema = z.object({ unifiCameraId: id })
 export const caldavConnectSchema = z.object({
   baseUrl: z.string().trim().url().max(2000).refine((u) => u.startsWith('https://') || u.startsWith('http://'), 'Server URL must be http(s)'),
   username: z.string().trim().min(1).max(200),

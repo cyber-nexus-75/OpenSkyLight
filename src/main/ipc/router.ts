@@ -27,6 +27,7 @@ import type { Kiosk } from '../kiosk/kiosk'
 import type { Updater } from '../updater'
 import type { RssService } from '../services/rssService'
 import type { CameraService } from '../services/cameraService'
+import type { UnifiService } from '../services/unifiService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
 
@@ -52,6 +53,7 @@ export interface Services {
   updater: Updater
   rss: RssService
   camera: CameraService
+  unifi: UnifiService
   birdnet: BirdNetService
   companion: CompanionServer
 }
@@ -90,6 +92,9 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'screensaver:pickFolder',
   'camera:add',
   'camera:remove',
+  'unifi:connect',
+  'unifi:disconnect',
+  'unifi:importCamera',
   'companion:issueToken',
   'companion:unpairAll'
 ])
@@ -327,6 +332,11 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('camera:remove', s.cameraIdSchema, (req) => services.camera.remove(req.cameraId))
   handle('camera:start', s.cameraIdSchema, (req) => services.camera.start(req.cameraId))
   handle('camera:stop', s.cameraSessionSchema, (req) => services.camera.stop(req.sessionId))
+  handle('unifi:getStatus', null, () => services.unifi.getStatus())
+  handle('unifi:connect', s.unifiConnectSchema, (req) => services.unifi.connect(req))
+  handle('unifi:disconnect', null, () => services.unifi.disconnect())
+  handle('unifi:listCameras', null, () => services.unifi.listCameras())
+  handle('unifi:importCamera', s.unifiImportSchema, (req) => services.unifi.importCamera(req.unifiCameraId))
 
   handle('weather:get', null, () => services.weather.get())
   handle('weather:searchCity', s.citySearchSchema, (req) => services.weather.searchCity(req.query))

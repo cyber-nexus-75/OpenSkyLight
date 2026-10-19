@@ -190,8 +190,9 @@ function CameraPicker({ onPick }: { onPick: (cameraId: string) => void }) {
         </div>
       ))}
 
+      <UnifiPicker onImported={(cameraId) => onPick(cameraId)} />
       <div className="flex flex-col gap-2 rounded-2xl bg-paper-deep/50 p-4">
-        <FieldLabel>Add a camera</FieldLabel>
+        <FieldLabel>Add a camera manually</FieldLabel>
         <OskInput value={name} onChange={setName} placeholder="Name (e.g. Front door)" />
         <OskInput value={url} onChange={setUrl} placeholder="rtsp://user:password@192.168.1.50:554/stream1" />
         <p className="text-sm font-semibold text-ink-faint">
@@ -235,6 +236,99 @@ function BirdNetPicker({ onPick }: { onPick: (url: string) => void }) {
       </p>
       <BigButton onClick={() => void testAndAdd()} disabled={!/^https?:\/\/.+/i.test(url.trim()) || testing}>
         {testing ? 'Testing…' : 'Test & place tile'}
+      </BigButton>
+    </div>
+  )
+}
+
+
+function UnifiPicker({ onImported }: { onImported: (cameraId: string) => void }) {
+  const queryClient = useQueryClient()
+  const pushToast = useToasts((s) => s.push)
+  const [host, setHost] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const status = useQuery({ queryKey: ['unifiStatus'], queryFn: () => ipcInvoke('unifi:getStatus', undefined) })
+  const cameras = useQuery({
+    queryKey: ['unifiCameras'],
+    queryFn: () => ipcInvoke('unifi:listCameras', undefined),
+    enabled: status.data?.configured === true,
+    staleTime: 60_000
+  })
+  const connect = useMutation({
+    mutationFn: (input: { host: string; apiKey: string }) => ipcInvoke('unifi:connect', input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['unifiStatus'] })
+      void queryClient.invalidateQueries({ queryKey: ['unifiCameras'] })
+      setHost('')
+      setApiKey('')
+    },
+    onError: (err: Error) => pushToast(err.message)
+  })
+  const disconnect = useMutation({
+    mutationFn: () => ipcInvoke('unifi:disconnect', undefined),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['unifiStatus'] })
+      void queryClient.invalidateQueries({ queryKey: ['unifiCameras'] })
+    }
+  })
+  const importCamera = useMutation({
+    mutationFn: (input: { unifiCameraId: string }) => ipcInvoke('unifi:importCamera', input),
+    onSuccess: (res) => {
+      void queryClient.invalidateQueries({ queryKey: ['unifiCameras'] })
+      void queryClient.invalidateQueries({ queryKey: ['cameras'] })
+      onImported(res.cameraId)
+    },
+    onError: (err: Error) => pushToast(err.message)
+  })
+  if (status.data?.configured) {
+    return (
+      <div className="flex flex-col gap-2 rounded-2xl bg-paper-deep/50 p-4">
+        <div className="flex items-center gap-2">
+          <span className="flex-1 text-lg font-bold">UniFi Protect · {status.data.host}</span>
+          <button
+            type="button"
+            onClick={() => disconnect.mutate(undefined)}
+            className="pressable rounded-full border-2 border-ember-soft px-4 py-1.5 text-sm font-bold text-ember-deep"
+          >
+            Forget
+          </button>
+        </div>
+        {cameras.isPending && <p className="text-sm font-bold text-ink-faint">Loading cameras…</p>}
+        {cameras.data?.length === 0 && (
+          <p className="text-sm font-semibold text-ink-faint">No cameras found on this console.</p>
+        )}
+        {(cameras.data ?? []).map((cam) => (
+          <div key={cam.id} className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => importCamera.mutate({ unifiCameraId: cam.id })}
+              className="pressable min-w-0 flex-1 rounded-2xl bg-card p-3 text-left"
+            >
+              <span className="block truncate text-base font-bold">{cam.name}</span>
+              <span className="block text-sm font-bold text-ink-faint">
+                {cam.model}
+                {cam.imported ? ' · added' : ''}
+              </span>
+            </button>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl bg-paper-deep/50 p-4">
+      <FieldLabel>UniFi Protect</FieldLabel>
+      <p className="text-sm font-semibold text-ink-faint">
+        Connect your UniFi OS console to list its cameras automatically. Create an API key on the
+        console under Settings → Control Plane → Integrations.
+      </p>
+      <OskInput value={host} onChange={setHost} placeholder="Console host (e.g. 192.168.1.1)" />
+      <OskInput value={apiKey} onChange={setApiKey} placeholder="API key" />
+      <BigButton
+        onClick={() => connect.mutate({ host: host.trim(), apiKey: apiKey.trim() })}
+        disabled={!host.trim() || apiKey.trim().length < 10 || connect.isPending}
+      >
+        {connect.isPending ? 'Connecting…' : 'Connect UniFi Protect'}
       </BigButton>
     </div>
   )

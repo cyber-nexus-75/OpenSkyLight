@@ -28,6 +28,7 @@ import { createKiosk } from './kiosk/kiosk'
 import { createUpdater } from './updater'
 import { createRssService } from './services/rssService'
 import { createCameraService } from './services/cameraService'
+import { createUnifiService } from './services/unifiService'
 import { createBirdNetService } from './services/birdnetService'
 import { createGoogleAuth } from './sync/googleAuth'
 import { createGoogleSync } from './sync/googleSync'
@@ -63,6 +64,10 @@ if (!gotLock) {
     const kiosk = createKiosk({ settings, broadcast, avatars })
     const updater = createUpdater({ broadcast })
     const cameraService = createCameraService(settings)
+    const unifiService = createUnifiService({
+      settings,
+      addCamera: (name, url) => cameraService.add(name, url).id
+    })
     app.on('will-quit', () => cameraService.shutdown())
     const choresService = createChoresService(db, deviceTz)
     const googleAuth = createGoogleAuth(db, settings)
@@ -122,6 +127,7 @@ if (!gotLock) {
       updater,
       rss: createRssService(),
       camera: cameraService,
+      unifi: unifiService,
       birdnet: createBirdNetService(),
       companion
     }
