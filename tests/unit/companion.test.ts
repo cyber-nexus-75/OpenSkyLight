@@ -181,11 +181,11 @@ describe('companionServer', () => {
   it('allows full calendar CRUD for a paired phone, and nothing administrative', async () => {
     const { base, token } = await boot()
     const headers = { Authorization: `Bearer ${token}` }
-    for (const channel of ['events:get', 'events:create', 'events:update', 'events:delete', 'calendars:list']) {
+    for (const channel of ['events:get', 'events:create', 'events:update', 'events:delete', 'calendars:list', 'ai:importEvents']) {
       const res = await fetch(`${base}/api/rpc/${channel}`, { method: 'POST', headers })
       expect(res.status).toBe(200)
     }
-    for (const channel of ['settings:set', 'auth:setPin', 'camera:add', 'unifi:connect', 'caldav:connect', 'app:installUpdate']) {
+    for (const channel of ['settings:set', 'auth:setPin', 'camera:add', 'unifi:connect', 'caldav:connect', 'ai:setConfig', 'webdav:connect', 'app:installUpdate']) {
       const res = await fetch(`${base}/api/rpc/${channel}`, { method: 'POST', headers })
       expect(res.status).toBe(404)
     }

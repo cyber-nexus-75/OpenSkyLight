@@ -131,6 +131,13 @@ export function useEventMutations() {
   return { create, update, remove }
 }
 
+export function useAiImport() {
+  return useInvalidatingMutation(
+    (input: { text: string; images: string[]; tz: string }) => rpc('ai:importEvents', input),
+    [['occurrences']]
+  )
+}
+
 export function useAvatarMutation() {
   return useInvalidatingMutation((input: AvatarSetInput) => rpc('people:setAvatar', input), [['people']])
 }

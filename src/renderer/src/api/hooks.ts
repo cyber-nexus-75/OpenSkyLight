@@ -213,6 +213,21 @@ export function useIcsMutations() {
   }
 }
 
+export function useAiImport() {
+  const calendarKeys = [['calendars'], ['occurrences']]
+  return {
+    setConfig: useInvalidatingMutation(
+      (input: { endpointUrl: string; model: string; apiKey: string }) => ipcInvoke('ai:setConfig', input),
+      [['aiStatus']]
+    ),
+    clearConfig: useInvalidatingMutation(() => ipcInvoke('ai:clearConfig', undefined), [['aiStatus']]),
+    importEvents: useInvalidatingMutation(
+      (input: { text: string; images: string[]; tz: string }) => ipcInvoke('ai:importEvents', input),
+      calendarKeys
+    )
+  }
+}
+
 export function useWebdavMutations() {
   const keys = [['webdavStatus']]
   return {

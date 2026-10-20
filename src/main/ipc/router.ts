@@ -29,6 +29,7 @@ import type { RssService } from '../services/rssService'
 import type { CameraService } from '../services/cameraService'
 import type { UnifiService } from '../services/unifiService'
 import type { WebdavService } from '../services/webdavService'
+import type { AiService } from '../services/aiService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
 
@@ -56,6 +57,7 @@ export interface Services {
   camera: CameraService
   unifi: UnifiService
   webdav: WebdavService
+  ai: AiService
   birdnet: BirdNetService
   companion: CompanionServer
 }
@@ -99,6 +101,8 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'unifi:importCamera',
   'webdav:connect',
   'webdav:disconnect',
+  'ai:setConfig',
+  'ai:clearConfig',
   'companion:issueToken',
   'companion:unpairAll'
 ])
@@ -353,6 +357,12 @@ export function buildChannelTable(services: Services): ChannelTable {
   })
   handle('webdav:disconnect', null, () => services.webdav.disconnect())
   handle('webdav:syncNow', null, async () => ({ changed: await services.webdav.pull() }))
+  handle('ai:getStatus', null, () => services.ai.getStatus())
+  handle('ai:setConfig', s.aiConfigSchema, (req) => services.ai.setConfig(req))
+  handle('ai:clearConfig', null, () => services.ai.clearConfig())
+  handle('ai:importEvents', s.aiImportSchema, async (req) => ({
+    drafts: await services.ai.importEvents(req)
+  }))
 
   handle('weather:get', null, () => services.weather.get())
   handle('weather:searchCity', s.citySearchSchema, (req) => services.weather.searchCity(req.query))

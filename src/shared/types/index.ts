@@ -138,6 +138,23 @@ export interface EventCreateInput {
   recurrence?: RecurrenceInput | null
 }
 
+/** One AI-proposed event, shown on a review screen — never auto-committed. */
+export interface AiEventDraft {
+  title: string
+  /** ISO date (yyyy-MM-dd) the draft lands on */
+  date: string
+  /** 24h local time, e.g. '16:30'; null = all-day */
+  startTime: string | null
+  endTime: string | null
+  allDay: boolean
+  location: string | null
+  description: string | null
+  /** recurrence freq the model proposed, if any */
+  repeat: 'daily' | 'weekly' | 'monthly' | 'yearly' | null
+  /** model's own note about what it was unsure of */
+  note: string | null
+}
+
 export type EditScope = 'this' | 'following' | 'all'
 
 export interface EventUpdateInput {

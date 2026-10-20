@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
-import type { CalendarDto, EventPatch, OccurrenceDto, RecurrenceInput } from '@shared/types'
-import { useCalendars, useEventMutations, useOccurrences, usePeople } from '../api/hooks'
+import type { AiEventDraft, CalendarDto, EventPatch, OccurrenceDto, RecurrenceInput } from '@shared/types'
+import { useAiImport, useCalendars, useEventMutations, useOccurrences, usePeople } from '../api/hooks'
 import { uploadPhoto } from '../api/client'
 import { Card, EmptyNote, GhostButton, PersonAvatar, PrimaryButton, SectionLabel, TextInput } from '../components/ui'
 
@@ -58,6 +58,8 @@ export function CalendarPage() {
   const [editing, setEditing] = useState<{ occ: OccurrenceDto | null; draft: EventDraftShape } | null>(null)
   const [photoState, setPhotoState] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiNote, setAiNote] = useState<string | null>(null)
   const tz = DateTime.local().zoneName ?? 'UTC'
 
   const range = useMemo(() => {
@@ -106,6 +108,45 @@ export function CalendarPage() {
       setPhotoState(err instanceof Error ? err.message : 'Upload failed')
     }
     setTimeout(() => setPhotoState(null), 4000)
+  }
+
+  const confirmAiDraft = (draft: AiEventDraft): void => {
+    const writable = calendars.filter((c) => !c.readOnly)
+    const cal = writable[0]
+    if (!cal) {
+      setAiNote('No writable calendar')
+      return
+    }
+    const zone = DateTime.local().zoneName ?? 'UTC'
+    const startDate = DateTime.fromISO(draft.date, { zone })
+    const startIso = draft.allDay
+      ? startDate.toUTC().toISO()
+      : startDate.set({ hour: Number(draft.startTime?.slice(0, 2) ?? 9), minute: Number(draft.startTime?.slice(3) ?? 0) }).toUTC().toISO()
+    const endIso = draft.allDay
+      ? startDate.plus({ days: 1 }).toUTC().toISO()
+      : draft.endTime
+        ? startDate.set({ hour: Number(draft.endTime.slice(0, 2)), minute: Number(draft.endTime.slice(3)) }).toUTC().toISO()
+        : startDate.plus({ hours: 1 }).toUTC().toISO()
+    mutations.create.mutate(
+      {
+        calendarId: cal.id,
+        title: draft.title,
+        location: draft.location,
+        description: draft.description,
+        start: startIso!,
+        end: endIso!,
+        tz: zone,
+        allDay: draft.allDay,
+        personIds: [],
+        recurrence: draft.repeat ? { freq: draft.repeat } : null
+      },
+      {
+        onSuccess: () => {
+          setAiNote(`Added "${draft.title}"`)
+          setTimeout(() => setAiNote(null), 4000)
+        }
+      }
+    )
   }
 
   return (
@@ -200,10 +241,11 @@ export function CalendarPage() {
         )
       })}
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <PrimaryButton onClick={startNew} disabled={calendars.filter((c) => !c.readOnly).length === 0}>
           + New event
         </PrimaryButton>
+        <GhostButton onClick={() => setAiOpen(true)}>✨ AI import</GhostButton>
         <GhostButton onClick={() => photoInputRef.current?.click()}>📷 Photo</GhostButton>
         <input
           ref={photoInputRef}
@@ -218,6 +260,14 @@ export function CalendarPage() {
         />
       </div>
       {photoState && <EmptyNote>{photoState}</EmptyNote>}
+
+      {aiOpen && (
+        <AiImportSheet
+          onClose={() => setAiOpen(false)}
+          onConfirm={(draft) => confirmAiDraft(draft)}
+        />
+      )}
+      {aiNote && <EmptyNote>{aiNote}</EmptyNote>}
 
       {editing && (
         <EventEditor
@@ -507,6 +557,106 @@ function EventEditor({
               </div>
             )}
           </div>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+
+function AiImportSheet({ onClose, onConfirm }: { onClose: () => void; onConfirm: (draft: AiEventDraft) => void }) {
+  const ai = useAiImport()
+  const [text, setText] = useState('')
+  const [images, setImages] = useState<string[]>([])
+  const [drafts, setDrafts] = useState<AiEventDraft[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const attach = async (files: FileList | null): Promise<void> => {
+    const list = [...(files ?? [])].slice(0, 5 - images.length)
+    const encoded: string[] = []
+    for (const f of list) {
+      const buf = await f.arrayBuffer()
+      let bin = ''
+      const bytes = new Uint8Array(buf)
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+      encoded.push(btoa(bin))
+    }
+    setImages((prev) => [...prev, ...encoded].slice(0, 5))
+  }
+
+  const run = (): void => {
+    const tz = DateTime.local().zoneName ?? 'UTC'
+    ai.mutate(
+      { text, images, tz },
+      {
+        onSuccess: (res) => {
+          setError(null)
+          setDrafts(res.drafts)
+        },
+        onError: (err: Error) => setError(err.message)
+      }
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3" onClick={onClose}>
+      <Card className="w-full max-w-lg">
+        <div onClick={(e) => e.stopPropagation()} className="flex flex-col gap-3">
+          <SectionLabel>AI import — paste text or attach photos</SectionLabel>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Paste an email or schedule text…"
+            className="min-h-24 w-full rounded-xl border border-line bg-paper p-3 text-base font-semibold outline-none placeholder:text-ink-faint focus:border-ember"
+          />
+          {error && <p className="text-sm font-bold text-ember-deep">{error}</p>}
+          <div className="flex gap-2">
+            <GhostButton onClick={() => fileRef.current?.click()} disabled={images.length >= 5}>
+              Attach ({images.length}/5)
+            </GhostButton>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,application/pdf"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                void attach(e.target.files)
+                e.target.value = ''
+              }}
+            />
+            <span className="flex-1" />
+            <PrimaryButton onClick={run} disabled={(!text.trim() && images.length === 0) || ai.isPending}>
+              {ai.isPending ? 'Thinking…' : 'Find events'}
+            </PrimaryButton>
+          </div>
+          {drafts !== null && (
+            <div className="flex max-h-80 flex-col gap-2 overflow-y-auto">
+              {drafts.length === 0 && <EmptyNote>No events found.</EmptyNote>}
+              {drafts.map((d, i) => (
+                <div key={i} className="rounded-xl bg-paper-deep p-3">
+                  <div className="font-bold">{d.title}</div>
+                  <div className="text-sm font-bold text-ink-faint">
+                    {d.date}
+                    {d.allDay ? ' · all day' : ` · ${d.startTime ?? ''}–${d.endTime ?? ''}`}
+                    {d.repeat ? ` · repeats ${d.repeat}` : ''}
+                  </div>
+                  {d.note && <div className="mt-1 text-sm font-semibold text-ember-deep">⚠ {d.note}</div>}
+                  <div className="mt-2 flex gap-2">
+                    <GhostButton onClick={() => setDrafts((prev) => (prev ?? []).filter((x) => x !== d))}>
+                      Discard
+                    </GhostButton>
+                    <span className="flex-1" />
+                    <PrimaryButton onClick={() => { onConfirm(d); setDrafts((prev) => (prev ?? []).filter((x) => x !== d)) }}>
+                      Add
+                    </PrimaryButton>
+                  </div>
+                </div>
+              ))}
+              {drafts.length === 0 && <GhostButton onClick={onClose}>Done</GhostButton>}
+            </div>
+          )}
         </div>
       </Card>
     </div>

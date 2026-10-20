@@ -1,4 +1,5 @@
 import type {
+  AiEventDraft,
   AppSettings,
   AvatarSetInput,
   CalendarCreateInput,
@@ -221,6 +222,13 @@ export type IpcContract = {
   'webdav:connect': { req: { url: string; username: string; password: string }; res: void }
   'webdav:disconnect': { req: void; res: void }
   'webdav:syncNow': { req: void; res: { changed: number } }
+  'ai:getStatus': { req: void; res: { configured: boolean; endpointUrl: string | null; model: string | null } }
+  'ai:setConfig': { req: { endpointUrl: string; model: string; apiKey: string }; res: void }
+  'ai:clearConfig': { req: void; res: void }
+  'ai:importEvents': {
+    req: { text: string; images: string[]; tz: string }
+    res: { drafts: AiEventDraft[] }
+  }
   'kiosk:previewScreensaver': { req: void; res: void }
 
   'companion:getStatus': {

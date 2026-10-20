@@ -30,6 +30,7 @@ import { createRssService } from './services/rssService'
 import { createCameraService } from './services/cameraService'
 import { createUnifiService } from './services/unifiService'
 import { createWebdavService } from './services/webdavService'
+import { createAiService } from './services/aiService'
 import { createBirdNetService } from './services/birdnetService'
 import { createGoogleAuth } from './sync/googleAuth'
 import { createGoogleSync } from './sync/googleSync'
@@ -66,6 +67,7 @@ if (!gotLock) {
       settings,
       cacheDir: join(app.getPath('userData'), 'screensaver-cache')
     })
+    const aiService = createAiService({ settings })
     const kiosk = createKiosk({
       settings,
       broadcast,
@@ -141,6 +143,7 @@ if (!gotLock) {
       camera: cameraService,
       unifi: unifiService,
       webdav: webdavService,
+      ai: aiService,
       birdnet: createBirdNetService(),
       companion
     }

@@ -185,6 +185,16 @@ export const icsAddSchema = z.object({
   name: z.string().trim().min(1).max(80),
   color: hexColor
 })
+export const aiConfigSchema = z.object({
+  endpointUrl: z.string().trim().min(8).max(2000),
+  model: z.string().trim().min(1).max(200),
+  apiKey: z.string().max(400)
+})
+export const aiImportSchema = z.object({
+  text: z.string().max(20_000),
+  images: z.array(z.string().min(1)).max(5),
+  tz: z.string().min(1).max(64)
+})
 export const webdavConnectSchema = z.object({
   url: z.string().trim().min(8).max(2000),
   username: z.string().trim().min(1).max(200),

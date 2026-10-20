@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CalendarDto, ChoreDto, PersonDto, PersonRole, RecurrenceInput, RewardDto } from '@shared/types'
+import type { AiEventDraft, CalendarDto, ChoreDto, PersonDto, PersonRole, RecurrenceInput, RewardDto } from '@shared/types'
 import { PERSON_COLORS } from '@shared/types'
 import { describeRecurrence } from '@shared/recurrence/build'
 import {
@@ -30,6 +30,7 @@ import {
   useSettingsMutation,
   useSyncNow,
   useSyncStatus,
+  useAiImport,
   useWebdavMutations
 } from '../../api/hooks'
 import { PinDialog } from '../../components/PinDialog'
@@ -1230,6 +1231,172 @@ function hhMmToMinutes(s: string): number {
   return (h || 0) * 60 + (m || 0)
 }
 
+function AiImportSection() {
+  const queryClient = useQueryClient()
+  const ai = useAiImport()
+  const { data: calendars = [] } = useCalendars()
+  const status = useQuery({ queryKey: ['aiStatus'], queryFn: () => ipcInvoke('ai:getStatus', undefined) })
+  const [endpointUrl, setEndpointUrl] = useState('')
+  const [model, setModel] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [text, setText] = useState('')
+  const [images, setImages] = useState<string[]>([])
+  const [drafts, setDrafts] = useState<AiEventDraft[] | null>(null)
+  const writable = calendars.filter((c) => !c.readOnly)
+
+  const attach = (): void => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/png,image/jpeg,image/webp,application/pdf'
+    input.multiple = true
+    input.onchange = async () => {
+      const files = [...(input.files ?? [])].slice(0, 5 - images.length)
+      const encoded: string[] = []
+      for (const f of files) {
+        const buf = await f.arrayBuffer()
+        let bin = ''
+        const bytes = new Uint8Array(buf)
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+        encoded.push(btoa(bin))
+      }
+      setImages((prev) => [...prev, ...encoded].slice(0, 5))
+    }
+    input.click()
+  }
+
+  const runImport = (): void => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    ai.importEvents.mutate(
+      { text, images, tz },
+      {
+        onSuccess: (res) => {
+          setDrafts(res.drafts)
+          setText('')
+          setImages([])
+        }
+      }
+    )
+  }
+
+  const confirmDraft = (draft: AiEventDraft, keep: boolean): void => {
+    if (!keep) {
+      setDrafts((d) => (d ?? []).filter((x) => x !== draft))
+      return
+    }
+    const cal = writable[0]
+    if (!cal) return
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const start = draft.allDay
+      ? new Date(`${draft.date}T00:00:00`).toISOString()
+      : new Date(`${draft.date}T${draft.startTime}:00`).toISOString()
+    const end = draft.allDay
+      ? new Date(new Date(`${draft.date}T00:00:00`).getTime() + 86400000).toISOString()
+      : draft.endTime
+        ? new Date(`${draft.date}T${draft.endTime}:00`).toISOString()
+        : new Date(new Date(`${draft.date}T${draft.startTime}:00`).getTime() + 3600000).toISOString()
+    void ipcInvoke('events:create', {
+      calendarId: cal.id,
+      title: draft.title,
+      location: draft.location,
+      description: draft.description,
+      start,
+      end,
+      tz: zone,
+      allDay: draft.allDay,
+      personIds: [],
+      recurrence: draft.repeat ? { freq: draft.repeat } : null
+    }).then(() => {
+      void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
+      setDrafts((d) => (d ?? []).filter((x) => x !== draft))
+    })
+  }
+
+  const st = status.data
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+      <FieldLabel>AI import</FieldLabel>
+      {st?.configured ? (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-semibold text-ink-faint">
+            {st.endpointUrl} · model {st.model}
+          </p>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Paste an email, schedule text, or add photos of flyers…"
+            className="min-h-24 w-full rounded-xl border border-line bg-paper p-3 text-base font-semibold outline-none placeholder:text-ink-faint focus:border-ember"
+          />
+          <div className="flex items-center gap-3">
+            <BigButton variant="ghost" onClick={attach} disabled={images.length >= 5}>
+              Attach ({images.length}/5)
+            </BigButton>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => ai.clearConfig.mutate(undefined)}
+              className="pressable rounded-full border-2 border-ember-soft px-3 py-1 text-sm font-bold text-ember-deep"
+            >
+              Forget AI settings
+            </button>
+          </div>
+          <BigButton
+            onClick={runImport}
+            disabled={(!text.trim() && images.length === 0) || ai.importEvents.isPending}
+          >
+            {ai.importEvents.isPending ? 'Thinking…' : 'Find events'}
+          </BigButton>
+          {ai.importEvents.isError && (
+            <p className="text-sm font-bold text-ember-deep">{ai.importEvents.error.message}</p>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold text-ink-faint">
+            Any OpenAI-compatible endpoint works — your Mistral API key, or a LAN-hosted server
+            (e.g. Ollama behind a reverse proxy). The key is stored encrypted on this device.
+            Image and PDF inputs need a vision-capable model.
+          </p>
+          <OskInput value={endpointUrl} onChange={setEndpointUrl} placeholder="https://api.mistral.ai/v1/chat/completions" />
+          <OskInput value={model} onChange={setModel} placeholder="Model (e.g. mistral-small-latest)" />
+          <OskInput value={apiKey} onChange={setApiKey} placeholder="API key" />
+          <BigButton
+            onClick={() => ai.setConfig.mutate({ endpointUrl: endpointUrl.trim(), model: model.trim(), apiKey: apiKey.trim() })}
+            disabled={!endpointUrl.trim() || !model.trim() || ai.setConfig.isPending}
+          >
+            {ai.setConfig.isPending ? 'Saving…' : 'Save AI settings'}
+          </BigButton>
+          {ai.setConfig.isError && <p className="text-sm font-bold text-ember-deep">{ai.setConfig.error.message}</p>}
+        </div>
+      )}
+
+      <Dialog open={drafts !== null} onClose={() => setDrafts(null)} title="Review proposed events">
+        <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto">
+          {(drafts ?? []).length === 0 && <p>Nothing left to review.</p>}
+          {(drafts ?? []).map((d, i) => (
+            <div key={i} className="rounded-2xl bg-paper-deep/50 p-3">
+              <div className="text-lg font-bold">{d.title}</div>
+              <div className="text-sm font-bold text-ink-faint">
+                {d.date}
+                {d.allDay ? ' · all day' : ` · ${d.startTime ?? ''}–${d.endTime ?? ''}`}
+                {d.repeat ? ` · repeats ${d.repeat}` : ''}
+                {d.location ? ` · ${d.location}` : ''}
+              </div>
+              {d.note && <div className="mt-1 text-sm font-semibold text-ember-deep">⚠ {d.note}</div>}
+              <div className="mt-2 flex gap-2">
+                <BigButton variant="ghost" onClick={() => confirmDraft(d, false)}>Discard</BigButton>
+                <span className="flex-1" />
+                <BigButton onClick={() => confirmDraft(d, true)} disabled={writable.length === 0}>
+                  Add to calendar
+                </BigButton>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Dialog>
+    </div>
+  )
+}
+
 function WebdavPhotosSection() {
   const queryClient = useQueryClient()
   const { data: settings } = useSettings()
@@ -1438,6 +1605,7 @@ function GeneralTab() {
       <WeatherSection />
       <ScreensaverSection />
       <WebdavPhotosSection />
+      <AiImportSection />
       <SleepSection />
       <ParentalLockSection />
       <CompanionSection />

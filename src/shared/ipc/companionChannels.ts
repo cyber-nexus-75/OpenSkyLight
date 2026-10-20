@@ -32,5 +32,6 @@ export const COMPANION_CHANNELS: ReadonlySet<IpcChannel> = new Set<IpcChannel>([
   'events:delete',
   'calendars:list',
   'people:list',
-  'people:setAvatar'
+  'people:setAvatar',
+  'ai:importEvents'
 ])

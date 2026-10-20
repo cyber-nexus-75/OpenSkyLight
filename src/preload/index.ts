@@ -24,6 +24,7 @@ const ALLOWED_INVOKE_PREFIXES = [
   'camera:',
   'unifi:',
   'webdav:',
+  'ai:',
   'companion:',
   'birdnet:'
 ]
