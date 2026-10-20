@@ -8,6 +8,7 @@ import type { IcsSync } from './icsSync'
 import type { CalDavSync } from './caldavSync'
 import type { OutboxWorker } from './outboxWorker'
 import type { SettingsService } from '../services/settingsService'
+import type { WebdavService } from '../services/webdavService'
 
 const TICK_MS = 60_000
 const ICS_EVERY_N_TICKS = 30 // ≈ every 30 minutes
@@ -24,6 +25,7 @@ export function createSyncManager(deps: {
   auth: GoogleAuth
   google: GoogleSync
   caldav?: CalDavSync
+  webdav?: Pick<WebdavService, 'pull'>
   outbox: OutboxWorker
   ics: IcsSync
   settings?: Pick<SettingsService, 'getAll'>
@@ -93,7 +95,17 @@ export function createSyncManager(deps: {
           }
         }
       }
-      // 4. ICS feeds on the slow cadence
+      // 4. screensaver photos from Nextcloud/WebDAV on the slow cadence
+      if (opts.ics && deps.webdav) {
+        try {
+          const changed = await deps.webdav.pull()
+          if (changed > 0) broadcast('push:screensaverPhotos', { changed })
+        } catch (err) {
+          // photo sync failing must never block calendar sync; surfaced via status
+          console.error('[sync] webdav photo pull failed:', err instanceof Error ? err.message : err)
+        }
+      }
+      // 5. ICS feeds on the slow cadence
       if (opts.ics) {
         const icsCals = db
           .select()

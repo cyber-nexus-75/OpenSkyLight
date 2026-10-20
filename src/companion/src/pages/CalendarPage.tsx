@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import type { CalendarDto, EventPatch, OccurrenceDto, RecurrenceInput } from '@shared/types'
 import { useCalendars, useEventMutations, useOccurrences, usePeople } from '../api/hooks'
+import { uploadPhoto } from '../api/client'
 import { Card, EmptyNote, GhostButton, PersonAvatar, PrimaryButton, SectionLabel, TextInput } from '../components/ui'
 
 type ViewMode = 'day' | 'week'
@@ -55,6 +56,8 @@ export function CalendarPage() {
   const [mode, setMode] = useState<ViewMode>('week')
   const [anchor, setAnchor] = useState(() => DateTime.now().startOf('day'))
   const [editing, setEditing] = useState<{ occ: OccurrenceDto | null; draft: EventDraftShape } | null>(null)
+  const [photoState, setPhotoState] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
   const tz = DateTime.local().zoneName ?? 'UTC'
 
   const range = useMemo(() => {
@@ -92,6 +95,17 @@ export function CalendarPage() {
         repeat: 'once'
       }
     })
+  }
+
+  const sendPhoto = async (name: string, file: File): Promise<void> => {
+    setPhotoState('Uploading…')
+    try {
+      await uploadPhoto(name, new Uint8Array(await file.arrayBuffer()))
+      setPhotoState('Added to the screensaver ✓')
+    } catch (err) {
+      setPhotoState(err instanceof Error ? err.message : 'Upload failed')
+    }
+    setTimeout(() => setPhotoState(null), 4000)
   }
 
   return (
@@ -186,9 +200,24 @@ export function CalendarPage() {
         )
       })}
 
-      <PrimaryButton onClick={startNew} disabled={calendars.filter((c) => !c.readOnly).length === 0}>
-        + New event
-      </PrimaryButton>
+      <div className="flex gap-2">
+        <PrimaryButton onClick={startNew} disabled={calendars.filter((c) => !c.readOnly).length === 0}>
+          + New event
+        </PrimaryButton>
+        <GhostButton onClick={() => photoInputRef.current?.click()}>📷 Photo</GhostButton>
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (file) void sendPhoto(file.name, file)
+          }}
+        />
+      </div>
+      {photoState && <EmptyNote>{photoState}</EmptyNote>}
 
       {editing && (
         <EventEditor

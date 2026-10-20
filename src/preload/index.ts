@@ -23,6 +23,7 @@ const ALLOWED_INVOKE_PREFIXES = [
   'rss:',
   'camera:',
   'unifi:',
+  'webdav:',
   'companion:',
   'birdnet:'
 ]

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CalendarDto, ChoreDto, PersonDto, PersonRole, RecurrenceInput, RewardDto } from '@shared/types'
 import { PERSON_COLORS } from '@shared/types'
 import { describeRecurrence } from '@shared/recurrence/build'
@@ -28,7 +29,8 @@ import {
   useSettings,
   useSettingsMutation,
   useSyncNow,
-  useSyncStatus
+  useSyncStatus,
+  useWebdavMutations
 } from '../../api/hooks'
 import { PinDialog } from '../../components/PinDialog'
 import { TimeField } from '../../components/DateTimePickers'
@@ -1228,6 +1230,98 @@ function hhMmToMinutes(s: string): number {
   return (h || 0) * 60 + (m || 0)
 }
 
+function WebdavPhotosSection() {
+  const queryClient = useQueryClient()
+  const { data: settings } = useSettings()
+  const webdav = useWebdavMutations()
+  const status = useQuery({
+    queryKey: ['webdavStatus'],
+    queryFn: () => ipcInvoke('webdav:getStatus', undefined),
+    refetchInterval: 30_000
+  })
+  const [url, setUrl] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  if (!settings) return null
+  const st = status.data
+  const connect = (): void => {
+    webdav.connect.mutate(
+      { url: url.trim(), username: username.trim(), password },
+      {
+        onSuccess: () => {
+          setUrl('')
+          setUsername('')
+          setPassword('')
+          void queryClient.invalidateQueries({ queryKey: ['webdavStatus'] })
+        }
+      }
+    )
+  }
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+      <div className="flex items-center gap-2">
+        <FieldLabel>Photos from Nextcloud (WebDAV)</FieldLabel>
+        <span className="flex-1" />
+        {st?.configured && (
+          <button
+            type="button"
+            onClick={() => {
+              webdav.disconnect.mutate(undefined, {
+                onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['webdavStatus'] })
+              })
+            }}
+            className="pressable rounded-full border-2 border-ember-soft px-3 py-1 text-sm font-bold text-ember-deep"
+          >
+            Disconnect
+          </button>
+        )}
+      </div>
+      {st?.configured ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold text-ink-faint">
+            {st.url} · {st.cachedCount} photo{st.cachedCount === 1 ? '' : 's'} on the display
+            {st.lastSyncedAt ? ` · synced ${new Date(st.lastSyncedAt).toLocaleString()}` : ''}
+          </p>
+          {st.lastError && <p className="text-sm font-bold text-ember-deep">{st.lastError}</p>}
+          <div>
+            <BigButton
+              variant="ghost"
+              onClick={() => {
+                webdav.syncNow.mutate(undefined, {
+                  onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['webdavStatus'] })
+                })
+              }}
+              disabled={webdav.syncNow.isPending}
+            >
+              {webdav.syncNow.isPending ? 'Syncing…' : 'Sync photos now'}
+            </BigButton>
+          </div>
+          <p className="text-sm font-semibold text-ink-faint">
+            Photos land on the screensaver automatically. The paired phone can add photos from its Calendar tab.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold text-ink-faint">
+            Point the screensaver at a folder on your Nextcloud (e.g.
+            https://cloud.example.com/remote.php/dav/files/user/Photos). Use an app password.
+            The kiosk pulls new photos automatically; phones upload through this connection.
+          </p>
+          <OskInput value={url} onChange={setUrl} placeholder="https://cloud.example.com/remote.php/dav/files/alice/Photos" />
+          <OskInput value={username} onChange={setUsername} placeholder="Username" />
+          <OskInput value={password} onChange={setPassword} placeholder="App password" />
+          <BigButton onClick={connect} disabled={!url.trim() || !username.trim() || !password || webdav.connect.isPending}>
+            {webdav.connect.isPending ? 'Connecting…' : 'Connect photo folder'}
+          </BigButton>
+          {webdav.connect.isError && (
+            <p className="text-sm font-bold text-ember-deep">{webdav.connect.error.message}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ScreensaverSection() {
   const { data: settings } = useSettings()
   const mutation = useSettingsMutation()
@@ -1343,6 +1437,7 @@ function GeneralTab() {
       </div>
       <WeatherSection />
       <ScreensaverSection />
+      <WebdavPhotosSection />
       <SleepSection />
       <ParentalLockSection />
       <CompanionSection />

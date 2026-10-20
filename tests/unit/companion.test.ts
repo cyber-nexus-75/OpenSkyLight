@@ -109,7 +109,8 @@ describe('companionServer', () => {
       dispatch: dispatchImpl ?? (async () => ({ ok: true, data: 'dispatched' })),
       version: '0.0.0-test',
       staticRoot,
-      avatarBytes: () => null
+      avatarBytes: () => null,
+      uploadPhoto: async () => undefined
     })
     server.applySettings()
     // wait for listen
@@ -157,7 +158,8 @@ describe('companionServer', () => {
       dispatch: async () => ({ ok: true, data: null }),
       version: '0.0.0-test',
       staticRoot,
-      avatarBytes: (personId) => (personId === 'p1' ? png : null)
+      avatarBytes: (personId) => (personId === 'p1' ? png : null),
+      uploadPhoto: async () => undefined
     })
     server.applySettings()
     for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
@@ -187,6 +189,78 @@ describe('companionServer', () => {
       const res = await fetch(`${base}/api/rpc/${channel}`, { method: 'POST', headers })
       expect(res.status).toBe(404)
     }
+  })
+
+  it('photo upload requires a valid token and forwards bytes to WebDAV', async () => {
+    staticRoot = mkdtempSync(join(tmpdir(), 'osl-companion-'))
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html>')
+    const settings = settingsStub({ enabled: true, port: 0 })
+    const tokens = createCompanionTokens(settings)
+    const uploads: { name: string; bytes: Buffer }[] = []
+    server = createCompanionServer({
+      settings,
+      tokens,
+      dispatch: async () => ({ ok: true, data: null }),
+      version: '0.0.0-test',
+      staticRoot,
+      avatarBytes: () => null,
+      uploadPhoto: async (name, bytes) => {
+        uploads.push({ name, bytes })
+      }
+    })
+    server.applySettings()
+    for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
+    const port = Number(new URL(server.issueToken().url).port)
+    const base = `http://127.0.0.1:${port}`
+    const token = server.issueToken().url.split('#t=')[1]
+    const bytes = Buffer.from('fake-jpeg-bytes')
+
+    const noAuth = await fetch(`${base}/api/photo?name=x.jpg`, { method: 'POST', body: bytes })
+    expect(noAuth.status).toBe(401)
+    expect(uploads.length).toBe(0)
+
+    const badName = await fetch(`${base}/api/photo`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: bytes
+    })
+    expect(badName.status).toBe(400)
+
+    const ok = await fetch(`${base}/api/photo?name=sunset.jpg`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
+      body: bytes
+    })
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toEqual({ ok: true, data: null })
+    expect(uploads).toEqual([{ name: 'sunset.jpg', bytes }])
+
+    // WebDAV failures surface as a typed error, not a crash
+    server.stop()
+    server = createCompanionServer({
+      settings,
+      tokens,
+      dispatch: async () => ({ ok: true, data: null }),
+      version: '0.0.0-test',
+      staticRoot,
+      avatarBytes: () => null,
+      uploadPhoto: async () => {
+        throw new Error('WebDAV not configured')
+      }
+    })
+    server.applySettings()
+    for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
+    const port2 = Number(new URL(server.issueToken().url).port)
+    const token2 = server.issueToken().url.split('#t=')[1]
+    const fail = await fetch(`http://127.0.0.1:${port2}/api/photo?name=y.jpg`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token2}` },
+      body: bytes
+    })
+    expect(fail.status).toBe(200)
+    const json = (await fail.json()) as { ok: boolean; error: { code: string; message: string } }
+    expect(json.ok).toBe(false)
+    expect(json.error.message).toContain('WebDAV not configured')
   })
 
   it('rejects channels outside the allowlist even with a valid token', async () => {

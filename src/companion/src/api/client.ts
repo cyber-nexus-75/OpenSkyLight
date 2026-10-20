@@ -58,3 +58,21 @@ export async function rpc<K extends IpcChannel>(
   if (!json.ok) throw new RpcError(json.error.code, json.error.message)
   return json.data
 }
+
+/** Upload a screensaver photo; goes to the kiosk's WebDAV (Nextcloud) folder. */
+export async function uploadPhoto(fileName: string, bytes: Uint8Array): Promise<void> {
+  const res = await fetch(`/api/photo?name=${encodeURIComponent(fileName)}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getToken() ?? ''}`,
+      'Content-Type': 'application/octet-stream'
+    },
+    body: bytes as unknown as BodyInit
+  })
+  if (res.status === 401) {
+    onUnauthorized()
+    throw new RpcError('UNAUTHORIZED', 'Not paired')
+  }
+  const json = (await res.json()) as IpcResult<null>
+  if (!json.ok) throw new RpcError(json.error.code, json.error.message)
+}

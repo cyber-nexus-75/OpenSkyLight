@@ -185,6 +185,11 @@ export const icsAddSchema = z.object({
   name: z.string().trim().min(1).max(80),
   color: hexColor
 })
+export const webdavConnectSchema = z.object({
+  url: z.string().trim().min(8).max(2000),
+  username: z.string().trim().min(1).max(200),
+  password: z.string().min(1).max(400)
+})
 export const unifiConnectSchema = z.object({
   host: z.string().trim().min(1).max(200),
   apiKey: z.string().trim().min(10).max(400)

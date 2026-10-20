@@ -213,6 +213,18 @@ export function useIcsMutations() {
   }
 }
 
+export function useWebdavMutations() {
+  const keys = [['webdavStatus']]
+  return {
+    connect: useInvalidatingMutation(
+      (input: { url: string; username: string; password: string }) => ipcInvoke('webdav:connect', input),
+      keys
+    ),
+    disconnect: useInvalidatingMutation(() => ipcInvoke('webdav:disconnect', undefined), keys),
+    syncNow: useInvalidatingMutation(() => ipcInvoke('webdav:syncNow', undefined), keys)
+  }
+}
+
 export function useSyncNow() {
   return useInvalidatingMutation(() => ipcInvoke('sync:now', undefined), [['syncStatus']])
 }

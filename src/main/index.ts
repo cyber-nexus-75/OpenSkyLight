@@ -29,6 +29,7 @@ import { createUpdater } from './updater'
 import { createRssService } from './services/rssService'
 import { createCameraService } from './services/cameraService'
 import { createUnifiService } from './services/unifiService'
+import { createWebdavService } from './services/webdavService'
 import { createBirdNetService } from './services/birdnetService'
 import { createGoogleAuth } from './sync/googleAuth'
 import { createGoogleSync } from './sync/googleSync'
@@ -61,7 +62,16 @@ if (!gotLock) {
 
     const settings = createSettingsService(db)
     const avatars = createAvatarService({ rootDir: app.getPath('userData') })
-    const kiosk = createKiosk({ settings, broadcast, avatars })
+    const webdavService = createWebdavService({
+      settings,
+      cacheDir: join(app.getPath('userData'), 'screensaver-cache')
+    })
+    const kiosk = createKiosk({
+      settings,
+      broadcast,
+      avatars,
+      webdavCacheDir: join(app.getPath('userData'), 'screensaver-cache')
+    })
     const updater = createUpdater({ broadcast })
     const cameraService = createCameraService(settings)
     const unifiService = createUnifiService({
@@ -86,6 +96,7 @@ if (!gotLock) {
       auth: googleAuth,
       google: googleSync,
       caldav: caldavSync,
+      webdav: webdavService,
       outbox,
       ics: icsSync,
       settings,
@@ -101,7 +112,8 @@ if (!gotLock) {
       dispatch: (channel, payload) => dispatch(services, channelTable, channel, payload, { gate: 'none' }),
       version: app.getVersion(),
       staticRoot: join(__dirname, '../companion'),
-      avatarBytes: (personId) => avatars.get(personId)
+      avatarBytes: (personId) => avatars.get(personId),
+      uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes)
     })
     app.on('will-quit', () => companion.shutdown())
 
@@ -128,6 +140,7 @@ if (!gotLock) {
       rss: createRssService(),
       camera: cameraService,
       unifi: unifiService,
+      webdav: webdavService,
       birdnet: createBirdNetService(),
       companion
     }

@@ -214,6 +214,13 @@ export type IpcContract = {
 
   'screensaver:pickFolder': { req: void; res: { folder: string | null } }
   'screensaver:listPhotos': { req: void; res: string[] }
+  'webdav:getStatus': {
+    req: void
+    res: { configured: boolean; url: string | null; username: string | null; lastSyncedAt: string | null; cachedCount: number; lastError: string | null }
+  }
+  'webdav:connect': { req: { url: string; username: string; password: string }; res: void }
+  'webdav:disconnect': { req: void; res: void }
+  'webdav:syncNow': { req: void; res: { changed: number } }
   'kiosk:previewScreensaver': { req: void; res: void }
 
   'companion:getStatus': {

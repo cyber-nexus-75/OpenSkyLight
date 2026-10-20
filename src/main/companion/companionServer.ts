@@ -8,6 +8,7 @@ import type { CompanionTokens } from './companionTokens'
 import { pickLanAddresses } from './lanAddress'
 
 const MAX_BODY_BYTES = 64 * 1024
+const MAX_PHOTO_BYTES = 20 * 1024 * 1024 // photo uploads go to Nextcloud, not the RPC pipeline
 const AUTH_FAIL_LIMIT = 30 // failures per IP per minute → 429
 const AUTH_FAIL_WINDOW_MS = 60_000
 
@@ -33,6 +34,8 @@ export interface CompanionServerDeps {
   staticRoot: string
   /** Serves stored person avatar bytes (only reachable with a valid token). */
   avatarBytes: (personId: string) => Buffer | null
+  /** Uploads a screensaver photo to the configured WebDAV folder. */
+  uploadPhoto: (fileName: string, bytes: Buffer) => Promise<void>
 }
 
 /**
@@ -69,6 +72,24 @@ export function createCompanionServer(deps: CompanionServerDeps) {
     const payload = JSON.stringify(body)
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     res.end(payload)
+  }
+
+  function readBodyBytes(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Buffer | null> {
+    return new Promise((resolve) => {
+      let size = 0
+      const chunks: Buffer[] = []
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length
+        if (size > limit) {
+          resolve(null)
+          req.destroy()
+          return
+        }
+        chunks.push(chunk)
+      })
+      req.on('end', () => resolve(Buffer.concat(chunks)))
+      req.on('error', () => resolve(null))
+    })
   }
 
   function readBody(req: IncomingMessage): Promise<string | null> {
@@ -165,7 +186,7 @@ export function createCompanionServer(deps: CompanionServerDeps) {
     res.end(data)
   }
 
-  function onRequest(req: IncomingMessage, res: ServerResponse): void {
+  async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = req.url ?? '/'
     if (url === '/api/health' && req.method === 'GET') {
       sendJson(res, 200, { app: 'openskylight', version: deps.version })
@@ -198,6 +219,44 @@ export function createCompanionServer(deps: CompanionServerDeps) {
       }
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' })
       res.end(bytes)
+      return
+    }
+    const photoMatch = url.split('?')[0].match(/^\/api\/photo$/)
+    if (photoMatch) {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, error: { code: 'METHOD', message: 'POST only' } })
+        return
+      }
+      const ip = req.socket.remoteAddress ?? 'unknown'
+      if (rateLimited(ip)) {
+        sendJson(res, 429, { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many attempts — wait a minute' } })
+        return
+      }
+      const auth = req.headers.authorization ?? ''
+      if (!deps.tokens.verify(auth.startsWith('Bearer ') ? auth.slice(7) : '')) {
+        recordAuthFail(ip)
+        sendJson(res, 401, { ok: false, error: { code: 'UNAUTHORIZED', message: 'Not paired' } })
+        return
+      }
+      const name = new URL(url, 'http://companion').searchParams.get('name') ?? ''
+      if (!name || name.length > 200) {
+        sendJson(res, 400, { ok: false, error: { code: 'INVALID', message: 'Missing name' } })
+        return
+      }
+      const body = await readBodyBytes(req, MAX_PHOTO_BYTES)
+      if (body === null || body.length === 0) {
+        sendJson(res, 413, { ok: false, error: { code: 'TOO_LARGE', message: 'Photo too large' } })
+        return
+      }
+      try {
+        await deps.uploadPhoto(name, body)
+        sendJson(res, 200, { ok: true, data: null })
+      } catch (err) {
+        sendJson(res, 200, {
+          ok: false,
+          error: { code: 'UPLOAD_FAILED', message: err instanceof Error ? err.message : 'Upload failed' }
+        })
+      }
       return
     }
     if (url.startsWith('/api/')) {

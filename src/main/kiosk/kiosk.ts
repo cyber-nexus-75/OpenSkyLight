@@ -1,5 +1,5 @@
 import { app, dialog, net, powerMonitor, powerSaveBlocker, protocol } from 'electron'
-import { readdirSync } from 'node:fs'
+import { readdirSync, existsSync } from 'node:fs'
 import { join, resolve, extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DateTime } from 'luxon'
@@ -15,8 +15,10 @@ export function createKiosk(deps: {
   settings: SettingsService
   broadcast: (ch: string, p: unknown) => void
   avatars: Pick<AvatarService, 'get'>
+  /** WebDAV pull cache dir, preferred over the local folder when it has photos */
+  webdavCacheDir: string | null
 }) {
-  const { settings, broadcast, avatars } = deps
+  const { settings, broadcast, avatars, webdavCacheDir } = deps
   let idleTimer: NodeJS.Timeout | null = null
   let sleepTimer: NodeJS.Timeout | null = null
   let screensaverOn = false
@@ -26,6 +28,14 @@ export function createKiosk(deps: {
   /** Photos are served through osl-photo:// so the sandboxed renderer never touches the filesystem. */
   function registerPhotoProtocol(): void {
     protocol.handle('osl-photo', (request) => {
+      const cache = webdavCacheDir
+      const name0 = decodeURIComponent(new URL(request.url).pathname.replace(/^\//, ''))
+      if (cache) {
+        const cachedFull = resolve(join(cache, name0))
+        if (cachedFull.startsWith(resolve(cache)) && existsSync(cachedFull)) {
+          return net.fetch(pathToFileURL(cachedFull).toString())
+        }
+      }
       const folder = settings.getAll().screensaver.folder
       if (!folder) return new Response('no folder', { status: 404 })
       const url = new URL(request.url)
@@ -64,17 +74,25 @@ export function createKiosk(deps: {
     })
   }
 
+  /** Photos come from the WebDAV pull cache when it has any; else the local folder. */
   function listPhotos(): string[] {
+    const listed = (dir: string): string[] => {
+      try {
+        return readdirSync(dir)
+          .filter((f) => PHOTO_EXTENSIONS.has(extname(f).toLowerCase()))
+          .sort()
+          .map((f) => `osl-photo://photos/${encodeURIComponent(f)}`)
+      } catch {
+        return []
+      }
+    }
+    if (webdavCacheDir) {
+      const cached = listed(webdavCacheDir)
+      if (cached.length > 0) return cached
+    }
     const folder = settings.getAll().screensaver.folder
     if (!folder) return []
-    try {
-      return readdirSync(folder)
-        .filter((f) => PHOTO_EXTENSIONS.has(extname(f).toLowerCase()))
-        .sort()
-        .map((f) => `osl-photo://photos/${encodeURIComponent(f)}`)
-    } catch {
-      return []
-    }
+    return listed(folder)
   }
 
   async function pickFolder(): Promise<{ folder: string | null }> {

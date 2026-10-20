@@ -28,6 +28,7 @@ import type { Updater } from '../updater'
 import type { RssService } from '../services/rssService'
 import type { CameraService } from '../services/cameraService'
 import type { UnifiService } from '../services/unifiService'
+import type { WebdavService } from '../services/webdavService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
 
@@ -54,6 +55,7 @@ export interface Services {
   rss: RssService
   camera: CameraService
   unifi: UnifiService
+  webdav: WebdavService
   birdnet: BirdNetService
   companion: CompanionServer
 }
@@ -95,6 +97,8 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'unifi:connect',
   'unifi:disconnect',
   'unifi:importCamera',
+  'webdav:connect',
+  'webdav:disconnect',
   'companion:issueToken',
   'companion:unpairAll'
 ])
@@ -337,6 +341,13 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('unifi:disconnect', null, () => services.unifi.disconnect())
   handle('unifi:listCameras', null, () => services.unifi.listCameras())
   handle('unifi:importCamera', s.unifiImportSchema, (req) => services.unifi.importCamera(req.unifiCameraId))
+  handle('webdav:getStatus', null, () => services.webdav.getStatus())
+  handle('webdav:connect', s.webdavConnectSchema, async (req) => {
+    await services.webdav.connect(req)
+    services.syncManager.syncNow()
+  })
+  handle('webdav:disconnect', null, () => services.webdav.disconnect())
+  handle('webdav:syncNow', null, async () => ({ changed: await services.webdav.pull() }))
 
   handle('weather:get', null, () => services.weather.get())
   handle('weather:searchCity', s.citySearchSchema, (req) => services.weather.searchCity(req.query))
