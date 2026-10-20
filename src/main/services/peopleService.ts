@@ -71,6 +71,10 @@ export function createPeopleService(db: AppDb) {
     return toDto(row)
   }
 
+  function exists(id: string): boolean {
+    return db.select({ id: people.id }).from(people).where(and(eq(people.id, id), isNull(people.deletedAt))).all().length > 0
+  }
+
   function remove(id: string): void {
     const result = db
       .update(people)
@@ -80,7 +84,7 @@ export function createPeopleService(db: AppDb) {
     if (result.changes === 0) throw notFound('Person')
   }
 
-  return { list, create, update, markAvatar, remove }
+  return { list, create, update, markAvatar, exists, remove }
 }
 
 export type PeopleService = ReturnType<typeof createPeopleService>

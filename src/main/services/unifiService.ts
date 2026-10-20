@@ -114,7 +114,10 @@ export function createUnifiService(deps: {
   /** Verify the key by listing cameras; store credentials only if it works. */
   async function connect(input: { host: string; apiKey: string }): Promise<{ host: string }> {
     const host = input.host.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
-    if (!/^[A-Za-z0-9.-]+(:\d+)?$/.test(host)) throw invalid('Enter the console host (e.g. 192.168.1.1)')
+    // hostname, hostname:port, [IPv6 literal], or [IPv6]:port
+    if (!/^([A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(:\d+)?$/.test(host)) {
+      throw invalid('Enter the console host (e.g. 192.168.1.1 or [fd00::1])')
+    }
     const raw = await fetchJson(host, input.apiKey.trim(), '/proxy/protect/integration/v1/cameras')
     const list = Array.isArray(raw) ? raw : ((raw as { cameras?: RawProtectCamera[] }).cameras ?? [])
     if (!Array.isArray(list)) throw invalid('Unexpected response from the UniFi console')

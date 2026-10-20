@@ -4,7 +4,7 @@ import type { ZodType } from 'zod'
 import { ZodError } from 'zod'
 import type { IpcChannel, IpcContract, IpcResult } from '@shared/ipc/contract'
 import * as s from '@shared/ipc/schemas'
-import { AppError } from '../services/errors'
+import { AppError, notFound } from '../services/errors'
 import { decodeBase64Image } from '../services/avatarService'
 import type { SettingsService } from '../services/settingsService'
 import type { PeopleService } from '../services/peopleService'
@@ -220,13 +220,18 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('people:list', null, () => services.people.list())
   handle('people:create', s.personCreateSchema, (req) => services.people.create(req))
   handle('people:update', s.personUpdateSchema, (req) => services.people.update(req))
-  handle('people:delete', s.idSchema, (req) => services.people.remove(req.id))
+  handle('people:delete', s.idSchema, (req) => {
+    services.people.remove(req.id)
+    services.avatars.remove(req.id) // no orphaned avatar files behind a tombstone
+  })
   handle('people:setAvatar', s.avatarSetSchema, (req) => {
+    if (!services.people.exists(req.personId)) throw notFound('Person')
     const bytes = decodeBase64Image(req.data)
     services.avatars.set(req.personId, bytes)
     return services.people.markAvatar(req.personId, true)
   })
   handle('people:removeAvatar', s.idSchema, (req) => {
+    if (!services.people.exists(req.id)) throw notFound('Person')
     services.avatars.remove(req.id)
     return services.people.markAvatar(req.id, false)
   })

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ipcInvoke } from '../../api/client'
 import { useSettings } from '../../api/hooks'
 import { ZONE } from '../../stores/uiStore'
@@ -19,11 +19,18 @@ function useClock(): DateTime {
 }
 
 function ScreensaverOverlay({ onDismiss }: { onDismiss: () => void }) {
+  const queryClient = useQueryClient()
   const { data: photos = [] } = useQuery({
     queryKey: ['screensaverPhotos'],
     queryFn: () => ipcInvoke('screensaver:listPhotos', undefined),
     staleTime: 60_000
   })
+  // photos changed on the server (phone upload / webdav pull) — refresh the list
+  useEffect(() => {
+    return window.osl.on('push:screensaverPhotos', () => {
+      void queryClient.invalidateQueries({ queryKey: ['screensaverPhotos'] })
+    })
+  }, [queryClient])
   const { data: settings } = useSettings()
   const [index, setIndex] = useState(0)
   const now = useClock()

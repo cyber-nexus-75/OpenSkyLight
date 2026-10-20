@@ -184,9 +184,10 @@ export function createOutboxWorker(deps: {
             pushedAny = true
           } catch (err) {
             if (err instanceof ConflictError) {
-              // 412: changed on the server while we held a local edit.
-              // Last writer wins, mirroring the Google path; drop our etag so the
-              // next pull re-evaluates remote state, and surface the conflict.
+              // 412: changed on the server while we held a local edit. Local wins
+              // (last-writer-wins, mirroring the Google path): the row stays dirty
+              // with a null etag, so the next drain PUTs unconditionally and
+              // overwrites the remote change; the toast surfaces the clash.
               db.update(events).set({ etag: null }).where(eq(events.id, row.id)).run()
               deps.onConflict(row.title)
               pushedAny = true

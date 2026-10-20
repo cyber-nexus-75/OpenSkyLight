@@ -279,6 +279,8 @@ function textFirstLevel(resp: unknown): string {
 
 export interface PutResult {
   etag: string | null
+  /** the event resource URL — the created href when this was a new PUT */
+  url: string
 }
 
 /** Create or update one VEVENT. Pass If-Match for optimistic concurrency. */
@@ -298,7 +300,7 @@ export async function putEvent(
   const res = await fetchFn(url, { method: 'PUT', headers, body: ics })
   if (res.status === 412) throw new ConflictError('Event changed on the server')
   if (!res.ok) throw new Error(`CalDAV PUT failed: HTTP ${res.status}`)
-  return { etag: res.headers.get('etag') }
+  return { etag: res.headers.get('etag'), url }
 }
 
 export class ConflictError extends Error {

@@ -115,7 +115,13 @@ export function createCalDavSync(deps: { db: AppDb; auth: CalDavAuth; deviceTz: 
       .from(events)
       .where(and(eq(events.calendarId, cal.id), isNull(events.deletedAt)))
       .all()
-    const localEtags = new Map(localRows.map((r) => [r.providerEventId!, r.etag]))
+    // rows not yet pushed have no providerEventId; the non-null assertion is
+    // only for the map type — filter them so "undefined" never becomes a key
+    const localEtags = new Map(
+      localRows
+        .filter((r) => r.providerEventId !== null)
+        .map((r) => [r.providerEventId!, r.etag] as const)
+    )
     const staleHrefs: string[] = []
     for (const [href, etag] of remoteEtags) {
       if (localEtags.get(href) !== etag) staleHrefs.push(href)
@@ -302,16 +308,16 @@ export function createCalDavSync(deps: { db: AppDb; auth: CalDavAuth; deviceTz: 
       { eventUrl, ifMatch: eventUrl ? row.etag : null },
       fetchFn
     )
-    if (!row.providerEventId || result.etag !== row.etag) {
-      db.update(events)
-        .set({
-          providerEventId: eventUrl ?? undefined,
-          etag: result.etag,
-          ...(row.icalUid ? {} : { icalUid: `osl-${row.id}@openskylight` })
-        })
-        .where(eq(events.id, row.id))
-        .run()
-    }
+    // always persist the resource URL (the href the server assigned on create)
+    // so the next edit patches THIS event instead of creating a duplicate
+    db.update(events)
+      .set({
+        providerEventId: result.url,
+        etag: result.etag,
+        ...(row.icalUid ? {} : { icalUid: `osl-${row.id}@openskylight` })
+      })
+      .where(eq(events.id, row.id))
+      .run()
   }
 
   return { listRemoteCalendars, setCalendarSelected, pullCalendar, pushRow }

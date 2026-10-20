@@ -213,6 +213,8 @@ describe('caldavClient against a stub server', () => {
 
       const put = await putEvent(calUrl, creds, ics)
       expect(put.etag).toMatch(/^"etag-/)
+      // the created href must come back so the caller can store it as providerEventId
+      expect(put.url).toMatch(/\/osl-[a-f0-9-]+\.ics$/)
 
       const etags = await etagReport(calUrl, creds)
       expect(etags.length).toBe(1)

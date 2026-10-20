@@ -225,8 +225,8 @@ export function CalendarPage() {
           people={people}
           editing={editing}
           onClose={() => setEditing(null)}
-          onSave={(scope) => {
-            const { draft, occ } = editing
+          onSave={(scope, draft) => {
+            const { occ } = editing
             const recurrence = REPEATS.find((r) => r.value === draft.repeat)!.freq
             const zone = DateTime.local().zoneName ?? 'UTC'
             const startDate = DateTime.fromISO(draft.date, { zone })
@@ -309,15 +309,16 @@ function EventEditor({
   people: { id: string; name: string; color: string; avatarUrl: string | null }[]
   editing: { occ: OccurrenceDto | null; draft: EventDraftShape }
   onClose: () => void
-  onSave: (scope: 'this' | 'following' | 'all') => void
+  onSave: (scope: 'this' | 'following' | 'all', draft: EventDraftShape) => void
   onDelete: (scope: 'this' | 'following' | 'all') => void
 }) {
-  const { occ, draft } = editing
+  const { occ } = editing
   const [scope, setScope] = useState<'this' | 'following' | 'all'>('this')
   const [showDelete, setShowDelete] = useState(false)
+  // the draft lives in real state — mutating a shared object would not re-render
+  const [draft, setDraft] = useState<EventDraftShape>(editing.draft)
   const patch = (p: Partial<EventDraftShape>): void => {
-    Object.assign(draft, p)
-    setScope((s) => s) // trigger re-render; draft is a mutable working copy
+    setDraft((d) => ({ ...d, ...p }))
   }
   const writable = calendars.filter((c) => !c.readOnly)
   const isRecurring = occ?.isRecurring ?? false
@@ -481,7 +482,7 @@ function EventEditor({
               <GhostButton onClick={onClose}>Cancel</GhostButton>
               {!readOnly && (
                 <PrimaryButton
-                  onClick={() => onSave(isRecurring ? scope : 'all')}
+                  onClick={() => onSave(isRecurring ? scope : 'all', draft)}
                   disabled={!draft.title.trim() || (draft.endTime <= draft.startTime && !draft.allDay)}
                 >
                   Save
