@@ -31,6 +31,7 @@ import { createCameraService } from './services/cameraService'
 import { createUnifiService } from './services/unifiService'
 import { createWebdavService } from './services/webdavService'
 import { createAiService } from './services/aiService'
+import { createDoorbellService } from './services/doorbellService'
 import { createBirdNetService } from './services/birdnetService'
 import { createGoogleAuth } from './sync/googleAuth'
 import { createGoogleSync } from './sync/googleSync'
@@ -68,6 +69,10 @@ if (!gotLock) {
       cacheDir: join(app.getPath('userData'), 'screensaver-cache')
     })
     const aiService = createAiService({ settings })
+    const doorbellService = createDoorbellService({
+      settings,
+      port: () => companion.boundPort() ?? settings.getAll().companion.port
+    })
     const kiosk = createKiosk({
       settings,
       broadcast,
@@ -115,7 +120,10 @@ if (!gotLock) {
       version: app.getVersion(),
       staticRoot: join(__dirname, '../companion'),
       avatarBytes: (personId) => avatars.get(personId),
-      uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes)
+      uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes),
+      acceptDoorbellRing: (token) => doorbellService.acceptRing(token),
+      verifyDoorbellToken: (token) => doorbellService.verifyToken(token),
+      onDoorbellRing: () => broadcast('push:doorbellRing', { at: new Date().toISOString() })
     })
     app.on('will-quit', () => companion.shutdown())
 
@@ -144,6 +152,7 @@ if (!gotLock) {
       unifi: unifiService,
       webdav: webdavService,
       ai: aiService,
+      doorbell: doorbellService,
       birdnet: createBirdNetService(),
       companion
     }

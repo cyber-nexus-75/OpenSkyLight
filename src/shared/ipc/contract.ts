@@ -225,6 +225,12 @@ export type IpcContract = {
   'ai:getStatus': { req: void; res: { configured: boolean; endpointUrl: string | null; model: string | null } }
   'ai:setConfig': { req: { endpointUrl: string; model: string; apiKey: string }; res: void }
   'ai:clearConfig': { req: void; res: void }
+  'doorbell:getStatus': {
+    req: void
+    res: { webhookToken: string | null; webhookUrl: string | null; cameraId: string | null }
+  }
+  'doorbell:setCamera': { req: { cameraId: string | null }; res: { webhookToken: string; webhookUrl: string } }
+  'doorbell:rotateToken': { req: void; res: { webhookToken: string; webhookUrl: string } }
   'ai:importEvents': {
     req: { text: string; images: string[]; tz: string }
     res: { drafts: AiEventDraft[] }

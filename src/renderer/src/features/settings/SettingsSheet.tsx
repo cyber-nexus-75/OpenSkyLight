@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AiEventDraft, CalendarDto, ChoreDto, PersonDto, PersonRole, RecurrenceInput, RewardDto } from '@shared/types'
 import { PERSON_COLORS } from '@shared/types'
 import { describeRecurrence } from '@shared/recurrence/build'
@@ -1231,6 +1231,70 @@ function hhMmToMinutes(s: string): number {
   return (h || 0) * 60 + (m || 0)
 }
 
+function DoorbellSection() {
+  const queryClient = useQueryClient()
+  const { data: cameras = [] } = useQuery({ queryKey: ['cameras'], queryFn: () => ipcInvoke('camera:list', undefined) })
+  const status = useQuery({ queryKey: ['doorbellStatus'], queryFn: () => ipcInvoke('doorbell:getStatus', undefined) })
+  const refresh = (): void => void queryClient.invalidateQueries({ queryKey: ['doorbellStatus'] })
+  const setCamera = useMutation({
+    mutationFn: (input: { cameraId: string | null }) => ipcInvoke('doorbell:setCamera', input),
+    onSuccess: refresh
+  })
+  const rotate = useMutation({
+    mutationFn: () => ipcInvoke('doorbell:rotateToken', undefined),
+    onSuccess: refresh
+  })
+  const st = status.data
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+      <FieldLabel>Doorbell</FieldLabel>
+      <p className="text-sm font-semibold text-ink-faint">
+        When your UniFi doorbell rings, this display chimes and shows the door camera
+        full-screen. In UniFi Protect: Alarm Manager → create an alarm → activity "Ring" →
+        custom webhook, and paste the URL below. Requires the companion server to be running.
+      </p>
+      <div>
+        <span className="mb-1 block text-xs font-extrabold text-ink-faint">DOORBELL CAMERA</span>
+        <select
+          value={st?.cameraId ?? ''}
+          onChange={(e) => setCamera.mutate({ cameraId: e.target.value || null })}
+          className="min-h-11 w-full rounded-xl border-2 border-line bg-card px-3 text-base font-bold"
+          aria-label="Doorbell camera"
+        >
+          <option value="">None</option>
+          {cameras.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {st?.webhookUrl ? (
+        <div>
+          <span className="mb-1 block text-xs font-extrabold text-ink-faint">WEBHOOK URL (paste into Protect)</span>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 overflow-x-auto rounded-xl bg-card p-3 text-sm font-bold">
+              {st.webhookUrl}
+            </code>
+            <BigButton variant="ghost" onClick={() => void navigator.clipboard?.writeText(st.webhookUrl!)}>
+              Copy
+            </BigButton>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm font-semibold text-ink-faint">
+          Pick a camera to generate the webhook URL.
+        </p>
+      )}
+      {st?.webhookUrl && (
+        <BigButton variant="ghost" onClick={() => rotate.mutate(undefined)} disabled={rotate.isPending}>
+          Rotate webhook URL (invalidates the old one)
+        </BigButton>
+      )}
+    </div>
+  )
+}
+
 function AiImportSection() {
   const queryClient = useQueryClient()
   const ai = useAiImport()
@@ -1606,6 +1670,7 @@ function GeneralTab() {
       <ScreensaverSection />
       <WebdavPhotosSection />
       <AiImportSection />
+      <DoorbellSection />
       <SleepSection />
       <ParentalLockSection />
       <CompanionSection />

@@ -30,6 +30,7 @@ import type { CameraService } from '../services/cameraService'
 import type { UnifiService } from '../services/unifiService'
 import type { WebdavService } from '../services/webdavService'
 import type { AiService } from '../services/aiService'
+import type { DoorbellService } from '../services/doorbellService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
 
@@ -58,6 +59,7 @@ export interface Services {
   unifi: UnifiService
   webdav: WebdavService
   ai: AiService
+  doorbell: DoorbellService
   birdnet: BirdNetService
   companion: CompanionServer
 }
@@ -103,6 +105,8 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'webdav:disconnect',
   'ai:setConfig',
   'ai:clearConfig',
+  'doorbell:setCamera',
+  'doorbell:rotateToken',
   'companion:issueToken',
   'companion:unpairAll'
 ])
@@ -363,6 +367,9 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('ai:importEvents', s.aiImportSchema, async (req) => ({
     drafts: await services.ai.importEvents(req)
   }))
+  handle('doorbell:getStatus', null, () => services.doorbell.getStatus())
+  handle('doorbell:setCamera', s.doorbellCameraSchema, (req) => services.doorbell.setCamera(req.cameraId))
+  handle('doorbell:rotateToken', null, () => services.doorbell.rotateToken())
 
   handle('weather:get', null, () => services.weather.get())
   handle('weather:searchCity', s.citySearchSchema, (req) => services.weather.searchCity(req.query))
