@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AvatarSetInput, ChoreCreateInput, ChoreUpdateInput } from '@shared/types'
+import type {
+  AvatarSetInput,
+  ChoreCreateInput,
+  ChoreUpdateInput,
+  EventCreateInput,
+  EventDeleteInput,
+  EventUpdateInput
+} from '@shared/types'
 import { rpc } from './client'
 
 /** Phone tabs get suspended constantly — focus/reconnect refetch is the real
@@ -89,6 +96,39 @@ export function useChoreMutations() {
       keys
     )
   }
+}
+
+export function useCalendars() {
+  return useQuery({ queryKey: ['calendars'], queryFn: () => rpc('calendars:list', undefined), ...LIVE })
+}
+
+export interface EventDraft {
+  calendarId: string
+  title: string
+  location: string
+  date: string // yyyy-MM-dd
+  startTime: string // HH:mm
+  endTime: string // HH:mm
+  allDay: boolean
+  personIds: string[]
+  repeat: 'once' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+}
+
+export function useEventMutations() {
+  const keys = [['occurrences']]
+  const create = useInvalidatingMutation(
+    (input: EventCreateInput) => rpc('events:create', input),
+    keys
+  )
+  const update = useInvalidatingMutation(
+    (input: EventUpdateInput) => rpc('events:update', input),
+    keys
+  )
+  const remove = useInvalidatingMutation(
+    (input: EventDeleteInput) => rpc('events:delete', input),
+    keys
+  )
+  return { create, update, remove }
 }
 
 export function useAvatarMutation() {

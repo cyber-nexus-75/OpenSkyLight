@@ -4,16 +4,16 @@ import { getToken, setUnauthorizedHandler } from './api/client'
 import { ListsPage } from './pages/ListsPage'
 import { MealsPage } from './pages/MealsPage'
 import { ChoresPage } from './pages/ChoresPage'
-import { AgendaPage } from './pages/AgendaPage'
+import { CalendarPage } from './pages/CalendarPage'
 import { PairScreen } from './pages/PairScreen'
 
-type TabId = 'lists' | 'meals' | 'chores' | 'agenda'
+type TabId = 'lists' | 'meals' | 'chores' | 'calendar'
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: 'lists', label: 'Lists', icon: '✓' },
   { id: 'meals', label: 'Meals', icon: '🍽' },
   { id: 'chores', label: 'Chores', icon: '★' },
-  { id: 'agenda', label: 'Agenda', icon: '▤' }
+  { id: 'calendar', label: 'Calendar', icon: '\u25a4' }
 ]
 
 export default function App() {
@@ -39,7 +39,7 @@ export default function App() {
           {tab === 'lists' && <ListsPage />}
           {tab === 'meals' && <MealsPage />}
           {tab === 'chores' && <ChoresPage />}
-          {tab === 'agenda' && <AgendaPage />}
+          {tab === 'calendar' && <CalendarPage />}
         </div>
       </main>
 

@@ -2,9 +2,10 @@ import type { IpcChannel } from './contract'
 
 /**
  * The ONLY channels the companion HTTP API will dispatch. Everything else
- * (settings, auth, google, camera, screensaver, updater…) returns 404 even
- * with a valid bearer token — a paired phone edits family data, it does not
- * administer the kiosk.
+ * (settings, auth, google, camera, screensaver, unifi, updater…) returns 404
+ * even with a valid bearer token — a paired phone edits family data, it does
+ * not administer the kiosk. Full calendar CRUD is included per the trust
+ * decision: pairing (PIN-gated on the display) IS the credential.
  */
 export const COMPANION_CHANNELS: ReadonlySet<IpcChannel> = new Set<IpcChannel>([
   'lists:getAll',
@@ -25,6 +26,11 @@ export const COMPANION_CHANNELS: ReadonlySet<IpcChannel> = new Set<IpcChannel>([
   'chores:uncomplete',
   'stars:balances',
   'events:getOccurrences',
+  'events:get',
+  'events:create',
+  'events:update',
+  'events:delete',
+  'calendars:list',
   'people:list',
   'people:setAvatar'
 ])

@@ -196,6 +196,26 @@ try {
   await page.waitForTimeout(3500) // bg transition + live NPR fetch
   await shot('home-dark.png')
 
+  // 8. the paired phone's calendar tab (full CRUD companion), served by the kiosk
+  const { chromium } = await import('playwright-core')
+  const phone = await chromium.launch()
+  const phonePage = await phone.newPage({ viewport: { width: 390, height: 844 } })
+  const token = await page.evaluate(async () => {
+    const res = await window.osl.invoke('companion:issueToken', undefined)
+    if (!res.ok) throw new Error(res.error?.message ?? 'issueToken failed')
+    return new URL(res.data.url).hash // #t=...
+  })
+  const companionUrl = await page.evaluate(async () => {
+    const res = await window.osl.invoke('companion:getStatus', undefined)
+    if (!res.ok || !res.data.running) throw new Error('companion server not running')
+    return res.data.urls[0]
+  })
+  await phonePage.goto(`${companionUrl}/${token}`)
+  await phonePage.getByRole('button', { name: 'Calendar', exact: true }).click()
+  await phonePage.waitForTimeout(1500)
+  await phonePage.screenshot({ path: join(outDir, 'companion-calendar.png') })
+  await phone.close()
+
   console.log('README screenshots written to', outDir)
 } finally {
   await app.close()

@@ -176,6 +176,19 @@ describe('companionServer', () => {
     expect(Buffer.from(await ok.arrayBuffer()).equals(png)).toBe(true)
   })
 
+  it('allows full calendar CRUD for a paired phone, and nothing administrative', async () => {
+    const { base, token } = await boot()
+    const headers = { Authorization: `Bearer ${token}` }
+    for (const channel of ['events:get', 'events:create', 'events:update', 'events:delete', 'calendars:list']) {
+      const res = await fetch(`${base}/api/rpc/${channel}`, { method: 'POST', headers })
+      expect(res.status).toBe(200)
+    }
+    for (const channel of ['settings:set', 'auth:setPin', 'camera:add', 'unifi:connect', 'caldav:connect', 'app:installUpdate']) {
+      const res = await fetch(`${base}/api/rpc/${channel}`, { method: 'POST', headers })
+      expect(res.status).toBe(404)
+    }
+  })
+
   it('rejects channels outside the allowlist even with a valid token', async () => {
     const { base, token } = await boot()
     for (const channel of ['settings:set', 'auth:setPin', 'camera:add', 'app:installUpdate']) {
