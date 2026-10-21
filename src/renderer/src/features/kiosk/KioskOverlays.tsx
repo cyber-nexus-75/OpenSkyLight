@@ -199,7 +199,6 @@ export function KioskOverlays() {
     }
   }, [])
 
-  if (briefing) return <BriefingOverlay onDismiss={() => setBriefing(false)} />
   if (sleeping && !awakeOverride) {
     return (
       <SleepOverlay
@@ -212,6 +211,7 @@ export function KioskOverlays() {
     )
   }
   if (ringAt) return <DoorbellOverlay ringAt={ringAt} onDismiss={() => setRingAt(null)} />
+  if (briefing) return <BriefingOverlay onDismiss={() => setBriefing(false)} />
   if (screensaver) return <ScreensaverOverlay onDismiss={() => setScreensaver(false)} />
   return null
 }

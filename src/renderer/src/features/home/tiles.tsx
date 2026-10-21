@@ -638,7 +638,7 @@ export function BirthdaysTile({ compact }: TileProps) {
         <div className="flex min-h-0 flex-1 flex-col justify-center gap-1.5 overflow-hidden">
           {withBirthdays.map(({ person, days }) => {
             const isToday = person.birthday === today
-            const turning = person.birthYear ? new Date().getFullYear() - person.birthYear + (days === 0 ? 1 : 0) : null
+            const turning = person.birthYear ? new Date().getFullYear() - person.birthYear : null
             return (
               <div key={person.id} className="flex items-center gap-2">
                 <Avatar person={person} className="h-8 w-8 shrink-0 rounded-full text-[10px]" />

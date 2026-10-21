@@ -39,19 +39,30 @@ export function createAiScanService(deps: {
       const files = await webdav.listFolder('scan-me')
       let totalDrafts = 0
       const processed: string[] = []
+      const errors: string[] = []
       for (const file of files.slice(0, 10)) {
-        const bytes = await webdav.downloadFromFolder('scan-me', file.name)
-        const input: AiImportInput = /\.json$/i.test(file.name)
-          ? { text: bytes.toString('utf8'), images: [], tz: tzNow() }
-          : { text: `Extract the events from this file (${file.name}).`, images: [bytes.toString('base64')], tz: tzNow() }
-        const drafts = await ai.importEvents(input)
-        if (drafts.length > 0) {
-          totalDrafts += drafts.length
-          onDrafts(drafts, file.name)
+        try {
+          const bytes = await webdav.downloadFromFolder('scan-me', file.name)
+          const input: AiImportInput = /\.json$/i.test(file.name)
+            ? { text: bytes.toString('utf8'), images: [], tz: tzNow() }
+            : { text: `Extract the events from this file (${file.name}).`, images: [bytes.toString('base64')], tz: tzNow() }
+          const drafts = await ai.importEvents(input)
+          if (drafts.length > 0) {
+            totalDrafts += drafts.length
+            onDrafts(drafts, file.name)
+          }
+          // success: archive then remove from scan-me so it isn't re-imported.
+          // on failure we leave the file in place for the next cycle instead of
+          // silently eating the family's flyer.
+          await webdav.uploadFile(file.name, bytes, { subfolder: 'scanned' })
+          await webdav.deleteFromFolder('scan-me', file.name)
+          processed.push(file.name)
+        } catch (err) {
+          errors.push(`${file.name}: ${err instanceof Error ? err.message : 'failed'}`)
         }
-        // move the file aside so it isn't re-scanned
-        await webdav.uploadFile(file.name, bytes, { subfolder: 'scanned' })
-        processed.push(file.name)
+      }
+      if (errors.length > 0 && processed.length === 0) {
+        return { drafts: totalDrafts, files: processed, error: errors.join('; ') }
       }
       return { drafts: totalDrafts, files: processed, error: null }
     } catch (err) {

@@ -320,6 +320,19 @@ export function createWebdavService(deps: {
     return downloadFromFolder('backups', fileName, fetchFn)
   }
 
+  /** Delete one file from a subfolder (404s tolerated — already gone). */
+  async function deleteFromFolder(subfolder: string, fileName: string, fetchFn?: DavFetch): Promise<void> {
+    const creds = credentials()
+    if (!creds) throw new AppError('NOT_CONFIGURED', 'Connect the photo WebDAV folder in Settings first')
+    const fn = fetchFn ?? davFetch(creds)
+    const res = await fn(`${creds.url}${subfolder}/${encodeURIComponent(safeFileName(fileName))}`, {
+      method: 'DELETE'
+    })
+    if (!res.ok && res.status !== 404 && res.status !== 410) {
+      throw new AppError('WEBDAV_ERROR', `Delete failed: HTTP ${res.status}`)
+    }
+  }
+
   /** Upload from the paired phone: PUT into the remote dir, then pull so the kiosk sees it. */
   async function upload(fileName: string, bytes: Buffer, fetchFn?: DavFetch): Promise<void> {
     const creds = credentials()
@@ -340,7 +353,7 @@ export function createWebdavService(deps: {
     }
   }
 
-  return { getStatus, connect, disconnect, pull, upload, uploadFile, listFolder, listBackups, downloadFromFolder, downloadBackup, listCache }
+  return { getStatus, connect, disconnect, pull, upload, uploadFile, listFolder, listBackups, downloadFromFolder, downloadBackup, deleteFromFolder, listCache }
 }
 
 export type WebdavService = ReturnType<typeof createWebdavService>

@@ -222,7 +222,8 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
 
   function uncomplete(choreId: string, date: string): { balance: number } {
     const [chore] = db.select().from(chores).where(eq(chores.id, choreId)).all()
-    if (!chore || !chore.personId) throw notFound('Chore')
+    const assignee = chore ? assigneeFor(chore, date) : null
+    if (!chore || !assignee) throw notFound('Chore')
     const [completion] = db
       .select()
       .from(choreCompletions)
@@ -234,7 +235,7 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
         tx.delete(choreCompletions).where(eq(choreCompletions.id, completion.id)).run()
       })
     }
-    return { balance: balanceOf(chore.personId) }
+    return { balance: balanceOf(assignee) }
   }
 
   return { list, create, update, remove, getDay, complete, uncomplete, balances, balanceOf }
