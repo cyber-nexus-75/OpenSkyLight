@@ -194,6 +194,13 @@ export const icsAddSchema = z.object({
 })
 export const backupRestoreSchema = z.object({ name: z.string().trim().min(1).max(200) })
 export const wallnoteSetSchema = z.object({ text: z.string().max(2000) })
+export const recipeImportSchema = z.object({
+  url: z.string().trim().url().max(2000)
+})
+export const aiScanRemoveSchema = z.object({
+  batch: z.number().int().min(0),
+  index: z.number().int().min(0)
+})
 export const doorbellCameraSchema = z.object({
   cameraId: id.nullable()
 })

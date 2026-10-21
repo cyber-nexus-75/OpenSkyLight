@@ -118,6 +118,7 @@ function ListCard({ list, mutations }: { list: ListDto; mutations: ReturnType<ty
       <div className="mb-1 flex items-center gap-2.5">
         <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ backgroundColor: list.color }} />
         <h2 className="flex-1 truncate font-display text-xl font-semibold">{list.name}</h2>
+        <GhostButton onClick={() => shareList(list)}>Share</GhostButton>
         {checked.length > 0 && (
           <button
             type="button"
@@ -180,4 +181,16 @@ function ListCard({ list, mutations }: { list: ListDto; mutations: ReturnType<ty
       </form>
     </Card>
   )
+}
+
+
+/** Share the unchecked items as plain text — the shopper's shopping list. */
+function shareList(list: ListDto): void {
+  const items = list.items.filter((i) => !i.checked).map((i) => `• ${i.text}`)
+  const text = `${list.name} (${items.length})\n\n${items.join('\n')}`
+  if (navigator.share) {
+    void navigator.share({ title: list.name, text }).catch(() => undefined)
+  } else {
+    void navigator.clipboard?.writeText(text)
+  }
 }

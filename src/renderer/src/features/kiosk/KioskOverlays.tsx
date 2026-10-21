@@ -3,7 +3,7 @@ import { DateTime } from 'luxon'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import mpegts from 'mpegts.js'
 import { ipcInvoke } from '../../api/client'
-import { useSettings } from '../../api/hooks'
+import { useSettings, usePeople, useOccurrences, useChoresDay, useWeather } from '../../api/hooks'
 import { ZONE } from '../../stores/uiStore'
 import { useKioskState } from '../../stores/kioskStore'
 
@@ -80,12 +80,88 @@ function SleepOverlay({ onWake }: { onWake: () => void }) {
   )
 }
 
+/**
+ * Morning briefing: shown when the display wakes from sleep in the morning —
+ * weather, everyone's events in their color, chore counts, birthdays.
+ * Dismisses on tap or after 90s.
+ */
+function BriefingOverlay({ onDismiss }: { onDismiss: () => void }) {
+  const todayIso = DateTime.now().toISODate()!
+  const { data: weather } = useWeather()
+  const { data: people = [] } = usePeople()
+  const { data: occurrences = [] } = useOccurrences({ start: `${todayIso}T00:00:00`, end: `${todayIso}T23:59:59` })
+  const { data: chores = [] } = useChoresDay(todayIso)
+  const now = useClock()
+
+  useEffect(() => {
+    const timer = window.setTimeout(onDismiss, 90_000)
+    return () => window.clearTimeout(timer)
+  }, [onDismiss])
+
+  const todays = occurrences
+    .filter((o) => o.start.slice(0, 10) === todayIso)
+    .sort((a, b) => a.start.localeCompare(b.start))
+  const birthdayPeople = people.filter((p) => p.birthday === now.toFormat('MM-dd'))
+  const doneChores = chores.filter((c) => c.completed).length
+
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col bg-paper p-10 text-ink" onPointerDown={onDismiss}>
+      <div className="flex items-baseline justify-between">
+        <h1 className="font-display text-6xl font-bold">Good morning ☀️</h1>
+        <div className="text-right">
+          <div className="text-5xl font-extrabold">{now.toFormat('h:mm a').toLowerCase()}</div>
+          {weather && (
+            <div className="text-2xl font-bold text-ink-soft">
+              {weather.temperature}°{weather.unit === 'c' ? 'C' : 'F'} · {weather.label}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {birthdayPeople.length > 0 && (
+        <div className="mt-6 rounded-card bg-ember/10 p-4 text-2xl font-extrabold text-ember-deep">
+          🎂 Happy birthday {birthdayPeople.map((p) => p.name).join(' & ')}!
+        </div>
+      )}
+
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+        {todays.length === 0 ? (
+          <p className="text-3xl font-bold text-ink-faint">Nothing on the calendar today — enjoy it.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {todays.map((o) => {
+              const person = people.find((p) => o.personIds.includes(p.id))
+              return (
+                <div key={o.key} className="flex items-center gap-4">
+                  <span className="w-28 shrink-0 text-2xl font-extrabold text-ink-faint">
+                    {o.allDay ? 'all day' : DateTime.fromISO(o.start).toFormat('h:mm a').toLowerCase()}
+                  </span>
+                  <span className="h-8 w-2 shrink-0 rounded-full" style={{ backgroundColor: person?.color ?? '#0091FF' }} />
+                  <span className="min-w-0 flex-1 truncate text-3xl font-bold">{o.title}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between text-xl font-bold text-ink-faint">
+        <span>
+          Chores: {doneChores}/{chores.length} done
+        </span>
+        <span>Tap to dismiss</span>
+      </div>
+    </div>
+  )
+}
+
 /** Mounts the sleep and screensaver layers based on main-process kiosk events. */
 export function KioskOverlays() {
   const [screensaver, setScreensaver] = useState(false)
   const [sleeping, setSleeping] = useState(false)
   const [awakeOverride, setAwakeOverride] = useState(false)
   const [ringAt, setRingAt] = useState<string | null>(null)
+  const [briefing, setBriefing] = useState(false)
   const overrideTimer = useRef<number | null>(null)
   const setCovered = useKioskState((s) => s.setCovered)
 
@@ -108,6 +184,9 @@ export function KioskOverlays() {
       const isSleeping = Boolean((d as { sleeping?: boolean })?.sleeping)
       setSleeping(isSleeping)
       if (!isSleeping) {
+        // waking from an overnight sleep in the morning → show the briefing
+        const hour = new Date().getHours()
+        if (hour >= 5 && hour < 11) setBriefing(true)
         // window ended naturally — clear any tap-to-wake override
         setAwakeOverride(false)
         if (overrideTimer.current) window.clearTimeout(overrideTimer.current)
@@ -120,6 +199,7 @@ export function KioskOverlays() {
     }
   }, [])
 
+  if (briefing) return <BriefingOverlay onDismiss={() => setBriefing(false)} />
   if (sleeping && !awakeOverride) {
     return (
       <SleepOverlay

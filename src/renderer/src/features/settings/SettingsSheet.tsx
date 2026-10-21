@@ -1473,6 +1473,11 @@ function AiImportSection() {
   const [images, setImages] = useState<string[]>([])
   const [drafts, setDrafts] = useState<AiEventDraft[] | null>(null)
   const writable = calendars.filter((c) => !c.readOnly)
+  const pending = useQuery({
+    queryKey: ['aiScanPending'],
+    queryFn: () => ipcInvoke('aiScan:getPending', undefined),
+    refetchInterval: 60_000
+  })
 
   const attach = (): void => {
     const input = document.createElement('input')
@@ -1577,6 +1582,79 @@ function AiImportSection() {
           </BigButton>
           {ai.importEvents.isError && (
             <p className="text-sm font-bold text-ember-deep">{ai.importEvents.error.message}</p>
+          )}
+          {(pending.data ?? []).length > 0 && (
+            <div className="rounded-xl bg-card p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="flex-1 text-sm font-extrabold text-ink-faint">
+                  SCANNED FROM NEXTCLOUD ({(pending.data ?? []).reduce((n, p) => n + p.drafts.length, 0)} drafts)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void ipcInvoke('aiScan:clear', undefined).then(() =>
+                      queryClient.invalidateQueries({ queryKey: ['aiScanPending'] })
+                    )
+                  }}
+                  className="pressable rounded-lg px-2 py-1 text-sm font-extrabold text-ink-faint"
+                >
+                  Clear all
+                </button>
+              </div>
+              {(pending.data ?? []).map((batch, bi) =>
+                batch.drafts.map((d, di) => (
+                  <div key={`${bi}-${di}`} className="flex items-center gap-2 border-b border-line/60 py-1.5 last:border-0">
+                    <span className="min-w-0 flex-1 truncate text-sm font-bold">
+                      {d.title}
+                      <span className="ml-2 text-xs font-bold text-ink-faint">{batch.source}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void ipcInvoke('events:create', {
+                          calendarId: writable[0].id,
+                          title: d.title,
+                          location: d.location,
+                          description: d.description,
+                          start: d.allDay
+                            ? new Date(`${d.date}T00:00:00`).toISOString()
+                            : new Date(`${d.date}T${d.startTime}:00`).toISOString(),
+                          end: d.allDay
+                            ? new Date(new Date(`${d.date}T00:00:00`).getTime() + 86400000).toISOString()
+                            : d.endTime
+                              ? new Date(`${d.date}T${d.endTime}:00`).toISOString()
+                              : new Date(new Date(`${d.date}T${d.startTime}:00`).getTime() + 3600000).toISOString(),
+                          tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                          allDay: d.allDay,
+                          personIds: [],
+                          recurrence: d.repeat ? { freq: d.repeat } : null
+                        }).then(() => {
+                          void ipcInvoke('aiScan:removeDraft', { batch: bi, index: di }).then(() => {
+                            void queryClient.invalidateQueries({ queryKey: ['aiScanPending'] })
+                          })
+                          void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
+                        })
+                      }}
+                      disabled={writable.length === 0}
+                      className="pressable rounded-lg bg-ember px-3 py-1 text-sm font-extrabold text-white disabled:opacity-40"
+                    >
+                      Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void ipcInvoke('aiScan:removeDraft', { batch: bi, index: di }).then(() => {
+                          void queryClient.invalidateQueries({ queryKey: ['aiScanPending'] })
+                        })
+                      }}
+                      className="pressable rounded-lg bg-paper-deep px-3 py-1 text-sm font-extrabold text-ink-faint"
+                    >
+                      Discard
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           )}
         </div>
       ) : (

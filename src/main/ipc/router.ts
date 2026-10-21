@@ -31,8 +31,10 @@ import type { CameraService } from '../services/cameraService'
 import type { UnifiService } from '../services/unifiService'
 import type { WebdavService } from '../services/webdavService'
 import type { AiService } from '../services/aiService'
+import type { AiEventDraft } from '@shared/types'
 import type { DoorbellService } from '../services/doorbellService'
 import type { BackupService } from '../services/backupService'
+import type { RecipeService } from '../services/recipeService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
 
@@ -63,6 +65,7 @@ export interface Services {
   ai: AiService
   doorbell: DoorbellService
   backup: BackupService
+  recipeLibrary: RecipeService
   birdnet: BirdNetService
   companion: CompanionServer
 }
@@ -112,6 +115,8 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'doorbell:rotateToken',
   'backup:restoreFromFile',
   'backup:restoreFromRemote',
+  'recipes:importUrl',
+  'recipes:delete',
   'companion:issueToken',
   'companion:unpairAll'
 ])
@@ -367,6 +372,32 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('webdav:disconnect', null, () => services.webdav.disconnect())
   handle('webdav:syncNow', null, async () => ({ changed: await services.webdav.pull() }))
   handle('ai:getStatus', null, () => services.ai.getStatus())
+  handle('recipes:list', null, () => services.recipeLibrary.list())
+  handle('recipes:importUrl', s.recipeImportSchema, (req) => services.recipeLibrary.importUrl(req.url))
+  handle('recipes:delete', s.idSchema, (req) => services.recipeLibrary.remove(req.id))
+  handle('aiScan:getPending', null, () => {
+    const raw = services.settings.getRaw('aiScan.pending')
+    try {
+      return (raw ? JSON.parse(raw) : []) as { drafts: AiEventDraft[]; source: string }[]
+    } catch {
+      return []
+    }
+  })
+  handle('aiScan:clear', null, () => services.settings.setRaw('aiScan.pending', '[]'))
+  handle('aiScan:removeDraft', s.aiScanRemoveSchema, (req) => {
+    const raw = services.settings.getRaw('aiScan.pending')
+    try {
+      const pending = (raw ? JSON.parse(raw) : []) as { drafts: unknown[]; source: string }[]
+      const batch = pending[req.batch]
+      if (batch) {
+        batch.drafts.splice(req.index, 1)
+        const cleaned = pending.filter((b) => b.drafts.length > 0)
+        services.settings.setRaw('aiScan.pending', JSON.stringify(cleaned))
+      }
+    } catch {
+      services.settings.setRaw('aiScan.pending', '[]')
+    }
+  })
   handle('ai:setConfig', s.aiConfigSchema, (req) => services.ai.setConfig(req))
   handle('ai:clearConfig', null, () => services.ai.clearConfig())
   handle('ai:importEvents', s.aiImportSchema, async (req) => ({
@@ -438,7 +469,22 @@ export function buildChannelTable(services: Services): ChannelTable {
     return { text: req.text, updatedAt }
   })
   handle('doorbell:getStatus', null, () => services.doorbell.getStatus())
-  handle('doorbell:setCamera', s.doorbellCameraSchema, (req) => services.doorbell.setCamera(req.cameraId))
+  handle('doorbell:setCamera', s.doorbellCameraSchema, (req) => {
+    // if the chosen camera came from UniFi Protect, remember its native id for snapshots
+    let unifiId: string | null | undefined = undefined
+    if (req.cameraId) {
+      const raw = services.settings.getRaw('unifi.imports.v1')
+      try {
+        const map = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+        unifiId = Object.entries(map).find(([, localId]) => localId === req.cameraId)?.[0] ?? null
+      } catch {
+        unifiId = null
+      }
+    } else {
+      unifiId = null
+    }
+    return services.doorbell.setCamera(req.cameraId, unifiId)
+  })
   handle('doorbell:rotateToken', null, () => services.doorbell.rotateToken())
 
   handle('weather:get', null, () => services.weather.get())

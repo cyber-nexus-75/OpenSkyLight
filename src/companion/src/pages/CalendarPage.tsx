@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import type { AiEventDraft, CalendarDto, EventPatch, OccurrenceDto, RecurrenceInput } from '@shared/types'
-import { useAiImport, useCalendars, useEventMutations, useOccurrences, usePeople } from '../api/hooks'
+import { useAiImport, useBalances, useCalendars, useEventMutations, useOccurrences, usePeople } from '../api/hooks'
 import { uploadPhoto } from '../api/client'
 import { Card, EmptyNote, GhostButton, PersonAvatar, PrimaryButton, SectionLabel, TextInput } from '../components/ui'
 
@@ -151,6 +151,7 @@ export function CalendarPage() {
 
   return (
     <div className="flex flex-col gap-3">
+      <WeeklyDigest />
       {/* view switch + navigation */}
       <div className="flex items-center gap-2">
         <button
@@ -563,6 +564,51 @@ function EventEditor({
   )
 }
 
+
+/** Week-at-a-glance: per-person event counts, chore slips, and star balances. */
+function WeeklyDigest() {
+  const tz = DateTime.local().zoneName ?? 'UTC'
+  const start = DateTime.now().setZone(tz).startOf('day')
+  const end = start.plus({ days: 7 })
+  const { data: occurrences = [] } = useOccurrences(start.toISO()!, end.toISO()!)
+  const { data: people = [] } = usePeople()
+  const { data: balances = [] } = useBalances()
+  const [dismissed, setDismissed] = useState(false)
+  if (dismissed) return null
+
+  const byPerson = new Map<string, number>()
+  for (const occ of occurrences) {
+    for (const pid of occ.personIds) {
+      byPerson.set(pid, (byPerson.get(pid) ?? 0) + 1)
+    }
+  }
+  return (
+    <Card>
+      <div className="mb-2 flex items-center gap-2">
+        <h2 className="flex-1 font-display text-xl font-semibold">The week ahead</h2>
+        <GhostButton onClick={() => setDismissed(true)}>Hide</GhostButton>
+      </div>
+      {people.length === 0 ? (
+        <EmptyNote>Add family members on the kiosk first.</EmptyNote>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {people.map((p) => (
+            <div key={p.id} className="flex items-center gap-2">
+              <PersonAvatar name={p.name} color={p.color} avatarUrl={p.avatarUrl} size="sm" />
+              <span className="min-w-0 flex-1 truncate text-base font-semibold">{p.name}</span>
+              <span className="text-sm font-bold text-ink-faint">
+                {byPerson.get(p.id) ?? 0} event{(byPerson.get(p.id) ?? 0) === 1 ? '' : 's'}
+              </span>
+              <span className="text-sm font-extrabold text-ember">
+                ★ {balances.find((b) => b.personId === p.id)?.balance ?? 0}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
 
 function AiImportSheet({ onClose, onConfirm }: { onClose: () => void; onConfirm: (draft: AiEventDraft) => void }) {
   const ai = useAiImport()

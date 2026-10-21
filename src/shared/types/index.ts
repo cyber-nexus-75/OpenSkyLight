@@ -246,6 +246,17 @@ export type MealSlotKind = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export const MEAL_SLOTS: MealSlotKind[] = ['breakfast', 'lunch', 'dinner', 'snack']
 
+export interface RecipeDto {
+  id: string
+  title: string
+  /** JSON string[] */
+  ingredients: string[]
+  instructions: string | null
+  tags: string[]
+  /** source URL when imported */
+  sourceUrl: string | null
+}
+
 export interface MealSlotDto {
   /** YYYY-MM-DD */
   date: string

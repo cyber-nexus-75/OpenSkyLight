@@ -1,5 +1,6 @@
 import type {
   AiEventDraft,
+  RecipeDto,
   AppSettings,
   AvatarSetInput,
   CalendarCreateInput,
@@ -242,6 +243,15 @@ export type IpcContract = {
   }
   'doorbell:setCamera': { req: { cameraId: string | null }; res: { webhookToken: string; webhookUrl: string } }
   'doorbell:rotateToken': { req: void; res: { webhookToken: string; webhookUrl: string } }
+  'recipes:list': { req: void; res: RecipeDto[] }
+  'recipes:importUrl': { req: { url: string }; res: RecipeDto }
+  'recipes:delete': { req: { id: string }; res: void }
+  'aiScan:getPending': {
+    req: void
+    res: { drafts: AiEventDraft[]; source: string }[]
+  }
+  'aiScan:clear': { req: void; res: void }
+  'aiScan:removeDraft': { req: { batch: number; index: number }; res: void }
   'ai:importEvents': {
     req: { text: string; images: string[]; tz: string }
     res: { drafts: AiEventDraft[] }

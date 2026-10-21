@@ -12,6 +12,8 @@ import { pickLanAddresses } from '../companion/lanAddress'
 
 const KEY_TOKEN_HASH = 'doorbell.tokenHash'
 const KEY_CAMERA = 'doorbell.cameraId'
+/** the camera's UniFi id when it was imported from Protect — enables snapshots */
+const KEY_UNIFI_ID = 'doorbell.unifiCameraId'
 const RING_DEBOUNCE_MS = 4_000
 
 export interface DoorbellStatus {
@@ -58,8 +60,9 @@ export function createDoorbellService(deps: {
 
   let latestToken: string | null = null
 
-  function setCamera(cameraId: string | null): { webhookToken: string; webhookUrl: string } {
+  function setCamera(cameraId: string | null, unifiCameraId?: string | null): { webhookToken: string; webhookUrl: string } {
     settings.setRaw(KEY_CAMERA, cameraId ?? '')
+    if (unifiCameraId !== undefined) settings.setRaw(KEY_UNIFI_ID, unifiCameraId ?? '')
     const token = latestToken ?? mintToken()
     latestToken = token
     return { webhookToken: token, webhookUrl: webhookUrl(token) }
@@ -90,7 +93,11 @@ export function createDoorbellService(deps: {
     return 'ok'
   }
 
-  return { getStatus, setCamera, rotateToken, verifyToken, acceptRing }
+  function unifiCameraId(): string | null {
+    return settings.getRaw(KEY_UNIFI_ID) || null
+  }
+
+  return { getStatus, setCamera, rotateToken, verifyToken, acceptRing, unifiCameraId }
 }
 
 export type DoorbellService = ReturnType<typeof createDoorbellService>
