@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow } from 'electron'
+import { app, dialog, ipcMain, BrowserWindow } from 'electron'
 import { DateTime } from 'luxon'
 import type { ZodType } from 'zod'
 import { ZodError } from 'zod'
@@ -6,6 +6,7 @@ import type { IpcChannel, IpcContract, IpcResult } from '@shared/ipc/contract'
 import * as s from '@shared/ipc/schemas'
 import { AppError, notFound } from '../services/errors'
 import { decodeBase64Image } from '../services/avatarService'
+import { readFileSync, writeFileSync } from 'node:fs'
 import type { SettingsService } from '../services/settingsService'
 import type { PeopleService } from '../services/peopleService'
 import type { AvatarService } from '../services/avatarService'
@@ -30,6 +31,10 @@ import type { CameraService } from '../services/cameraService'
 import type { UnifiService } from '../services/unifiService'
 import type { WebdavService } from '../services/webdavService'
 import type { AiService } from '../services/aiService'
+import type { AiEventDraft } from '@shared/types'
+import type { DoorbellService } from '../services/doorbellService'
+import type { BackupService } from '../services/backupService'
+import type { RecipeService } from '../services/recipeService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
 
@@ -58,6 +63,9 @@ export interface Services {
   unifi: UnifiService
   webdav: WebdavService
   ai: AiService
+  doorbell: DoorbellService
+  backup: BackupService
+  recipeLibrary: RecipeService
   birdnet: BirdNetService
   companion: CompanionServer
 }
@@ -103,6 +111,12 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'webdav:disconnect',
   'ai:setConfig',
   'ai:clearConfig',
+  'doorbell:setCamera',
+  'doorbell:rotateToken',
+  'backup:restoreFromFile',
+  'backup:restoreFromRemote',
+  'recipes:importUrl',
+  'recipes:delete',
   'companion:issueToken',
   'companion:unpairAll'
 ])
@@ -358,11 +372,120 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('webdav:disconnect', null, () => services.webdav.disconnect())
   handle('webdav:syncNow', null, async () => ({ changed: await services.webdav.pull() }))
   handle('ai:getStatus', null, () => services.ai.getStatus())
+  handle('recipes:list', null, () => services.recipeLibrary.list())
+  handle('recipes:importUrl', s.recipeImportSchema, (req) => services.recipeLibrary.importUrl(req.url))
+  handle('recipes:delete', s.idSchema, (req) => services.recipeLibrary.remove(req.id))
+  handle('aiScan:getPending', null, () => {
+    const raw = services.settings.getRaw('aiScan.pending')
+    try {
+      return (raw ? JSON.parse(raw) : []) as { drafts: AiEventDraft[]; source: string }[]
+    } catch {
+      return []
+    }
+  })
+  handle('aiScan:clear', null, () => services.settings.setRaw('aiScan.pending', '[]'))
+  handle('aiScan:removeDraft', s.aiScanRemoveSchema, (req) => {
+    const raw = services.settings.getRaw('aiScan.pending')
+    try {
+      const pending = (raw ? JSON.parse(raw) : []) as { drafts: unknown[]; source: string }[]
+      const batch = pending[req.batch]
+      if (batch) {
+        batch.drafts.splice(req.index, 1)
+        const cleaned = pending.filter((b) => b.drafts.length > 0)
+        services.settings.setRaw('aiScan.pending', JSON.stringify(cleaned))
+      }
+    } catch {
+      services.settings.setRaw('aiScan.pending', '[]')
+    }
+  })
   handle('ai:setConfig', s.aiConfigSchema, (req) => services.ai.setConfig(req))
   handle('ai:clearConfig', null, () => services.ai.clearConfig())
   handle('ai:importEvents', s.aiImportSchema, async (req) => ({
     drafts: await services.ai.importEvents(req)
   }))
+  handle('backup:exportToFile', null, async () => {
+    const file = services.backup.exportBackup()
+    const path = `openskylight-backup-${DateTime.now().toFormat('yyyyMMdd-HHmm')}.json`
+    const result = await dialog.showSaveDialog({
+      title: 'Save backup',
+      defaultPath: path,
+      filters: [{ name: 'OpenSkyLight backup', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) throw new AppError('CANCELLED', 'Export cancelled')
+    writeFileSync(result.filePath, JSON.stringify(file, null, 2))
+    return { path: result.filePath }
+  })
+  handle('backup:restoreFromFile', null, async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose a backup to restore',
+      filters: [{ name: 'OpenSkyLight backup', extensions: ['json'] }],
+      properties: ['openFile']
+    })
+    if (result.canceled || result.filePaths.length === 0) throw new AppError('CANCELLED', 'Restore cancelled')
+    const raw = JSON.parse(readFileSync(result.filePaths[0], 'utf8'))
+    const counts = services.backup.restoreBackup(raw)
+    broadcast('push:dataChanged', { domain: 'events' })
+    broadcast('push:dataChanged', { domain: 'people' })
+    broadcast('push:dataChanged', { domain: 'chores' })
+    broadcast('push:dataChanged', { domain: 'calendars' })
+    broadcast('push:dataChanged', { domain: 'settings' })
+    return counts
+  })
+  handle('backup:uploadNow', null, async () => {
+    const file = services.backup.exportBackup()
+    const fileName = `openskylight-backup-${DateTime.now().toFormat('yyyyMMdd-HHmm')}.json`
+    await services.webdav.uploadFile(fileName, Buffer.from(JSON.stringify(file)))
+    return { fileName }
+  })
+  handle('backup:listRemote', null, async () => {
+    const files = await services.webdav.listBackups()
+    return files.sort((a, b) => b.name.localeCompare(a.name)).slice(0, 30)
+  })
+  handle('backup:restoreFromRemote', s.backupRestoreSchema, async (req) => {
+    const bytes = await services.webdav.downloadBackup(req.name)
+    const raw = JSON.parse(bytes.toString('utf8'))
+    const counts = services.backup.restoreBackup(raw)
+    broadcast('push:dataChanged', { domain: 'events' })
+    broadcast('push:dataChanged', { domain: 'people' })
+    broadcast('push:dataChanged', { domain: 'chores' })
+    broadcast('push:dataChanged', { domain: 'calendars' })
+    broadcast('push:dataChanged', { domain: 'settings' })
+    return counts
+  })
+  handle('backup:getStatus', null, () => services.backup.autoStatus())
+  handle('wallnote:get', null, () => {
+    const raw = services.settings.getRaw('wallnote.v1')
+    if (!raw) return { text: '', updatedAt: null }
+    try {
+      return JSON.parse(raw) as { text: string; updatedAt: string }
+    } catch {
+      return { text: '', updatedAt: null }
+    }
+  })
+  handle('wallnote:set', s.wallnoteSetSchema, (req) => {
+    const updatedAt = new Date().toISOString()
+    services.settings.setRaw('wallnote.v1', JSON.stringify({ text: req.text, updatedAt }))
+    broadcast('push:wallnoteChanged', { text: req.text, updatedAt })
+    return { text: req.text, updatedAt }
+  })
+  handle('doorbell:getStatus', null, () => services.doorbell.getStatus())
+  handle('doorbell:setCamera', s.doorbellCameraSchema, (req) => {
+    // if the chosen camera came from UniFi Protect, remember its native id for snapshots
+    let unifiId: string | null | undefined = undefined
+    if (req.cameraId) {
+      const raw = services.settings.getRaw('unifi.imports.v1')
+      try {
+        const map = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+        unifiId = Object.entries(map).find(([, localId]) => localId === req.cameraId)?.[0] ?? null
+      } catch {
+        unifiId = null
+      }
+    } else {
+      unifiId = null
+    }
+    return services.doorbell.setCamera(req.cameraId, unifiId)
+  })
+  handle('doorbell:rotateToken', null, () => services.doorbell.rotateToken())
 
   handle('weather:get', null, () => services.weather.get())
   handle('weather:searchCity', s.citySearchSchema, (req) => services.weather.searchCity(req.query))

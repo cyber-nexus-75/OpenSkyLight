@@ -1,5 +1,6 @@
 import type {
   AiEventDraft,
+  RecipeDto,
   AppSettings,
   AvatarSetInput,
   CalendarCreateInput,
@@ -225,6 +226,32 @@ export type IpcContract = {
   'ai:getStatus': { req: void; res: { configured: boolean; endpointUrl: string | null; model: string | null } }
   'ai:setConfig': { req: { endpointUrl: string; model: string; apiKey: string }; res: void }
   'ai:clearConfig': { req: void; res: void }
+  'backup:exportToFile': { req: void; res: { path: string } }
+  'backup:restoreFromFile': { req: void; res: { counts: Record<string, number> } }
+  'backup:uploadNow': { req: void; res: { fileName: string } }
+  'backup:listRemote': { req: void; res: { name: string; etag: string; size: number }[] }
+  'backup:restoreFromRemote': { req: { name: string }; res: { counts: Record<string, number> } }
+  'wallnote:get': { req: void; res: { text: string; updatedAt: string | null } }
+  'wallnote:set': { req: { text: string }; res: { text: string; updatedAt: string } }
+  'backup:getStatus': {
+    req: void
+    res: { lastAutoBackupAt: string | null; lastAutoBackupError: string | null }
+  }
+  'doorbell:getStatus': {
+    req: void
+    res: { webhookToken: string | null; webhookUrl: string | null; cameraId: string | null }
+  }
+  'doorbell:setCamera': { req: { cameraId: string | null }; res: { webhookToken: string; webhookUrl: string } }
+  'doorbell:rotateToken': { req: void; res: { webhookToken: string; webhookUrl: string } }
+  'recipes:list': { req: void; res: RecipeDto[] }
+  'recipes:importUrl': { req: { url: string }; res: RecipeDto }
+  'recipes:delete': { req: { id: string }; res: void }
+  'aiScan:getPending': {
+    req: void
+    res: { drafts: AiEventDraft[]; source: string }[]
+  }
+  'aiScan:clear': { req: void; res: void }
+  'aiScan:removeDraft': { req: { batch: number; index: number }; res: void }
   'ai:importEvents': {
     req: { text: string; images: string[]; tz: string }
     res: { drafts: AiEventDraft[] }

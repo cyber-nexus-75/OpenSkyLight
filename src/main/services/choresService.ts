@@ -12,6 +12,27 @@ import { notFound } from './errors'
 type ChoreRow = typeof chores.$inferSelect
 
 export function createChoresService(db: AppDb, deviceTz: () => string) {
+  /** 2+ ids = rotation chore. null = fixed assignment. */
+  function rotationOf(row: ChoreRow): string[] | null {
+    if (!row.rotationPersonIds) return null
+    try {
+      const parsed = JSON.parse(row.rotationPersonIds) as string[]
+      return Array.isArray(parsed) && parsed.length >= 2 ? parsed : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Who owes this chore on this date: rotation picks by ISO week, else the fixed person. */
+  function assigneeFor(row: ChoreRow, date: string): string | null {
+    const rotation = rotationOf(row)
+    if (rotation) {
+      const week = Math.floor(DateTime.fromISO(date, { zone: deviceTz() }).startOf('week').toMillis() / (7 * 24 * 3600 * 1000))
+      return rotation[Math.abs(week) % rotation.length]!
+    }
+    return row.personId
+  }
+
   function toDto(row: ChoreRow): ChoreDto {
     const zone = deviceTz()
     return {
@@ -19,6 +40,7 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
       title: row.title,
       icon: row.icon,
       personId: row.personId!,
+      rotationPersonIds: rotationOf(row) ?? [],
       starsValue: row.starsValue,
       recurrence: row.scheduleRrule ? parseRRuleString(row.scheduleRrule, zone) : null,
       anchorDate: row.dueDate ?? DateTime.fromISO(row.createdAt).setZone(zone).toISODate()!,
@@ -64,6 +86,10 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
     const patch: Partial<typeof chores.$inferInsert> = {}
     if (input.title !== undefined) patch.title = input.title
     if (input.personId !== undefined) patch.personId = input.personId
+    if (input.rotationPersonIds !== undefined) {
+      patch.rotationPersonIds =
+        input.rotationPersonIds.length >= 2 ? JSON.stringify(input.rotationPersonIds) : null
+    }
     if (input.starsValue !== undefined) patch.starsValue = input.starsValue
     if (input.recurrence !== undefined) {
       patch.scheduleRrule = input.recurrence ? buildRRuleString(input.recurrence, zone) : null
@@ -127,16 +153,17 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
     )
     const routineOrder = { morning: 0, null: 1, evening: 2 } as Record<string, number>
     return rows
-      .filter((row) => row.personId && isDueOn(row, date))
+      .filter((row) => isDueOn(row, date))
       .map((row) => ({
         choreId: row.id,
         title: row.title,
         icon: row.icon,
-        personId: row.personId!,
+        personId: assigneeFor(row, date)!,
         starsValue: row.starsValue,
         routine: row.routine,
         completed: done.has(row.id)
       }))
+      .filter((d) => d.personId !== null)
       .sort((a, b) => routineOrder[String(a.routine)] - routineOrder[String(b.routine)])
   }
 
@@ -155,7 +182,8 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
 
   function complete(choreId: string, date: string): { balance: number } {
     const [chore] = db.select().from(chores).where(and(eq(chores.id, choreId), isNull(chores.deletedAt))).all()
-    if (!chore || !chore.personId) throw notFound('Chore')
+    const assignee = chore ? assigneeFor(chore, date) : null
+    if (!chore || !assignee) throw notFound('Chore')
     const [existing] = db
       .select()
       .from(choreCompletions)
@@ -169,7 +197,7 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
           .values({
             id: completionId,
             choreId,
-            personId: chore.personId!,
+            personId: assignee,
             dueDate: date,
             completedAt: now,
             starsAwarded: chore.starsValue
@@ -179,7 +207,7 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
           tx.insert(starLedger)
             .values({
               id: uuidv7(),
-              personId: chore.personId!,
+              personId: assignee,
               delta: chore.starsValue,
               reason: 'chore',
               refId: completionId,
@@ -189,7 +217,7 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
         }
       })
     }
-    return { balance: balanceOf(chore.personId) }
+    return { balance: balanceOf(assignee) }
   }
 
   function uncomplete(choreId: string, date: string): { balance: number } {

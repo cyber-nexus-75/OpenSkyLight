@@ -78,7 +78,7 @@ function encryptSecret(plain: string): string {
   return buf.toString('base64')
 }
 
-function decryptSecret(b64: string): string {
+export function decryptSecret(b64: string): string {
   const buf = Buffer.from(b64, 'base64')
   const asString = buf.toString('utf8')
   if (asString.startsWith('plain:')) return asString.slice(6)
@@ -93,6 +93,41 @@ interface RawProtectCamera {
   isOnline?: boolean
   rtspUrl?: string
   rtspsUrl?: string
+}
+
+/** Fetch the camera's current snapshot as JPEG bytes (integration API). */
+export async function fetchSnapshot(
+  host: string,
+  apiKey: string,
+  unifiCameraId: string
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const req = request(
+      {
+        hostname: host.split(':')[0],
+        port: host.includes(':') ? Number(host.split(':')[1]) : 443,
+        path: `/proxy/protect/integration/v1/cameras/${encodeURIComponent(unifiCameraId)}/snapshot`,
+        method: 'GET',
+        headers: { Accept: 'image/jpeg', 'X-API-Key': apiKey },
+        rejectUnauthorized: false,
+        timeout: 10_000
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c: Buffer) => chunks.push(c))
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            reject(new AppError('UNIFI_ERROR', `Snapshot failed: HTTP ${res.statusCode}`))
+            return
+          }
+          resolve(Buffer.concat(chunks))
+        })
+      }
+    )
+    req.on('timeout', () => req.destroy(new AppError('UNIFI_ERROR', 'Snapshot timed out')))
+    req.on('error', (err) => reject(err instanceof AppError ? err : new AppError('UNIFI_ERROR', err.message)))
+    req.end()
+  })
 }
 
 export function createUnifiService(deps: {

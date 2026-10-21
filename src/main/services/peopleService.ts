@@ -14,7 +14,9 @@ function toDto(row: typeof people.$inferSelect): PersonDto {
     color: row.color,
     role: row.role,
     sortOrder: row.sortOrder,
-    avatarUrl: row.avatarPath ? `osl-avatar://${row.id}` : null
+    avatarUrl: row.avatarPath ? `osl-avatar://${row.id}` : null,
+    birthday: row.birthday,
+    birthYear: row.birthYear
   }
 }
 
@@ -40,7 +42,7 @@ export function createPeopleService(db: AppDb) {
       createdAt: isoUtc(DateTime.utc())
     }
     db.insert(people).values(row).run()
-    return toDto({ ...row, avatarPath: null, deletedAt: null, sortOrder: row.sortOrder! } as typeof people.$inferSelect)
+    return toDto({ ...row, avatarPath: null, birthday: null, birthYear: null, deletedAt: null, sortOrder: row.sortOrder! } as typeof people.$inferSelect)
   }
 
   function update(input: PersonUpdateInput): PersonDto {
@@ -49,6 +51,8 @@ export function createPeopleService(db: AppDb) {
     if (input.color !== undefined) patch.color = input.color
     if (input.role !== undefined) patch.role = input.role
     if (input.sortOrder !== undefined) patch.sortOrder = input.sortOrder
+    if (input.birthday !== undefined) patch.birthday = input.birthday
+    if (input.birthYear !== undefined) patch.birthYear = input.birthYear
     const result = db
       .update(people)
       .set(patch)

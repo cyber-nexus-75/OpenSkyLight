@@ -76,7 +76,8 @@ export interface DavFileInfo {
 /** PROPFIND Depth:1 on the photo directory; returns photo files only. */
 export async function davList(
   fetchFn: DavFetch,
-  dirUrl: string
+  dirUrl: string,
+  extensions: Set<string> | null = PHOTO_EXTENSIONS
 ): Promise<DavFileInfo[]> {
   const res = await fetchFn(dirUrl, {
     method: 'PROPFIND',
@@ -98,7 +99,7 @@ export async function davList(
     if (!href || href.endsWith('/')) continue // the collection itself
     const name = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
     const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
-    if (!PHOTO_EXTENSIONS.has(ext)) continue
+    if (extensions && !extensions.has(ext)) continue
     const propstat = (Array.isArray(resp.propstat) ? resp.propstat[0] : resp.propstat) as Record<string, unknown> | undefined
     const prop = (propstat?.prop ?? {}) as Record<string, unknown>
     if (prop.resourcetype && typeof prop.resourcetype === 'object' && 'collection' in (prop.resourcetype as object)) continue
@@ -267,6 +268,58 @@ export function createWebdavService(deps: {
     }
   }
 
+  /** Upload arbitrary bytes into a subfolder, without photo checks or a pull. */
+  async function uploadFile(fileName: string, bytes: Buffer, opts: { subfolder?: string } = {}, fetchFn?: DavFetch): Promise<void> {
+    const creds = credentials()
+    if (!creds) throw new AppError('NOT_CONFIGURED', 'Connect the photo WebDAV folder in Settings first')
+    const fn = fetchFn ?? davFetch(creds)
+    const name = safeFileName(fileName)
+    const sub = opts.subfolder ?? 'backups'
+    const dir = `${creds.url}${sub}/`
+    // subfolders keep non-photo files off the screensaver rotation
+    await fn(dir, { method: 'MKCOL' }).catch(() => undefined)
+    const res = await fn(`${dir}${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: new Uint8Array(bytes)
+    })
+    if (!res.ok && res.status !== 201 && res.status !== 204) {
+      throw new AppError('WEBDAV_ERROR', `Upload failed: HTTP ${res.status}`)
+    }
+  }
+
+  /** List files in a subfolder, any extension. */
+  async function listFolder(subfolder: string, fetchFn?: DavFetch): Promise<DavFileInfo[]> {
+    const creds = credentials()
+    if (!creds) throw new AppError('NOT_CONFIGURED', 'Connect the photo WebDAV folder in Settings first')
+    const fn = fetchFn ?? davFetch(creds)
+    // no extension filter: scan-me accepts pdf/jpg/png/etc.
+    return davList(fn, `${creds.url}${subfolder}/`, null as unknown as Set<string>)
+  }
+
+  /** List JSON files in the backups/ subfolder. */
+  async function listBackups(fetchFn?: DavFetch): Promise<DavFileInfo[]> {
+    const creds = credentials()
+    if (!creds) throw new AppError('NOT_CONFIGURED', 'Connect the photo WebDAV folder in Settings first')
+    const fn = fetchFn ?? davFetch(creds)
+    return davList(fn, `${creds.url}backups/`, new Set(['.json']))
+  }
+
+  /** Download one file from a subfolder by name. */
+  async function downloadFromFolder(subfolder: string, fileName: string, fetchFn?: DavFetch): Promise<Buffer> {
+    const creds = credentials()
+    if (!creds) throw new AppError('NOT_CONFIGURED', 'Connect the photo WebDAV folder in Settings first')
+    const fn = fetchFn ?? davFetch(creds)
+    const res = await fn(`${creds.url}${subfolder}/${encodeURIComponent(safeFileName(fileName))}`)
+    if (!res.ok) throw new AppError('WEBDAV_ERROR', `Download failed: HTTP ${res.status}`)
+    return Buffer.from(await res.arrayBuffer())
+  }
+
+  /** Download one backup by name. */
+  async function downloadBackup(fileName: string, fetchFn?: DavFetch): Promise<Buffer> {
+    return downloadFromFolder('backups', fileName, fetchFn)
+  }
+
   /** Upload from the paired phone: PUT into the remote dir, then pull so the kiosk sees it. */
   async function upload(fileName: string, bytes: Buffer, fetchFn?: DavFetch): Promise<void> {
     const creds = credentials()
@@ -287,7 +340,7 @@ export function createWebdavService(deps: {
     }
   }
 
-  return { getStatus, connect, disconnect, pull, upload, listCache }
+  return { getStatus, connect, disconnect, pull, upload, uploadFile, listFolder, listBackups, downloadFromFolder, downloadBackup, listCache }
 }
 
 export type WebdavService = ReturnType<typeof createWebdavService>

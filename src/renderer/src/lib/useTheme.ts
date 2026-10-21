@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { DateTime } from 'luxon'
 import { isNightAt } from '@shared/sun'
+import { isInSleepWindow } from '@shared/sleepWindow'
 import type { AppSettings } from '@shared/types'
 import { useSettings } from '../api/hooks'
 import { ZONE } from '../stores/uiStore'
@@ -14,6 +15,12 @@ function applyTheme(settings: AppSettings | undefined): void {
     settings.theme === 'dark' ||
     (settings.theme === 'auto' && isNightAt(DateTime.now().setZone(ZONE), weather))
   document.documentElement.classList.toggle('dark', dark)
+  // night dimming: brightness filter during the configured window, independent
+  // of theme — a hallway display shouldn't blaze at 3am
+  const nd = settings.nightDimming
+  const now = DateTime.now().setZone(ZONE)
+  const inWindow = nd.enabled && isInSleepWindow(now.hour * 60 + now.minute, nd.start, nd.end)
+  document.documentElement.style.filter = inWindow ? `brightness(${nd.level}%)` : ''
 }
 
 /**
@@ -28,8 +35,8 @@ export function useTheme(): void {
 
   useEffect(() => {
     applyTheme(settings)
-    // only 'auto' can change with the clock; light/dark need no timer at all
-    if (settings?.theme !== 'auto') return
+    // both 'auto' theme and night dimming change with the clock
+    if (settings?.theme !== 'auto' && !settings?.nightDimming.enabled) return
     const timer = setInterval(() => applyTheme(settingsRef.current), 60_000)
     return () => clearInterval(timer)
   }, [settings])
