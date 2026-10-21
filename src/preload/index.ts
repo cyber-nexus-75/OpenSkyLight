@@ -27,6 +27,7 @@ const ALLOWED_INVOKE_PREFIXES = [
   'ai:',
   'doorbell:',
   'backup:',
+  'wallnote:',
   'companion:',
   'birdnet:'
 ]

@@ -230,6 +230,8 @@ export type IpcContract = {
   'backup:uploadNow': { req: void; res: { fileName: string } }
   'backup:listRemote': { req: void; res: { name: string; etag: string; size: number }[] }
   'backup:restoreFromRemote': { req: { name: string }; res: { counts: Record<string, number> } }
+  'wallnote:get': { req: void; res: { text: string; updatedAt: string | null } }
+  'wallnote:set': { req: { text: string }; res: { text: string; updatedAt: string } }
   'backup:getStatus': {
     req: void
     res: { lastAutoBackupAt: string | null; lastAutoBackupError: string | null }

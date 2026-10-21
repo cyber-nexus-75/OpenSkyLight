@@ -422,6 +422,21 @@ export function buildChannelTable(services: Services): ChannelTable {
     return counts
   })
   handle('backup:getStatus', null, () => services.backup.autoStatus())
+  handle('wallnote:get', null, () => {
+    const raw = services.settings.getRaw('wallnote.v1')
+    if (!raw) return { text: '', updatedAt: null }
+    try {
+      return JSON.parse(raw) as { text: string; updatedAt: string }
+    } catch {
+      return { text: '', updatedAt: null }
+    }
+  })
+  handle('wallnote:set', s.wallnoteSetSchema, (req) => {
+    const updatedAt = new Date().toISOString()
+    services.settings.setRaw('wallnote.v1', JSON.stringify({ text: req.text, updatedAt }))
+    broadcast('push:wallnoteChanged', { text: req.text, updatedAt })
+    return { text: req.text, updatedAt }
+  })
   handle('doorbell:getStatus', null, () => services.doorbell.getStatus())
   handle('doorbell:setCamera', s.doorbellCameraSchema, (req) => services.doorbell.setCamera(req.cameraId))
   handle('doorbell:rotateToken', null, () => services.doorbell.rotateToken())

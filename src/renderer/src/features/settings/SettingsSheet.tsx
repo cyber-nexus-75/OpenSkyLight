@@ -178,6 +178,8 @@ function FamilyTab() {
   const [name, setName] = useState('')
   const [color, setColor] = useState<string>(PERSON_COLORS[0])
   const [role, setRole] = useState<PersonRole>('child')
+  const [birthday, setBirthday] = useState('')
+  const [birthYear, setBirthYear] = useState('')
 
   const openEditor = (p: PersonDto | 'new'): void => {
     setEditing(p)
@@ -185,17 +187,29 @@ function FamilyTab() {
       setName('')
       setColor(PERSON_COLORS[people.length % PERSON_COLORS.length])
       setRole('child')
+      setBirthday('')
+      setBirthYear('')
     } else {
       setName(p.name)
       setColor(p.color)
       setRole(p.role)
+      setBirthday(p.birthday ?? '')
+      setBirthYear(p.birthYear ? String(p.birthYear) : '')
     }
   }
 
   const save = (): void => {
     if (!name.trim()) return
     if (editing === 'new') mutations.create.mutate({ name: name.trim(), color, role })
-    else if (editing) mutations.update.mutate({ id: editing.id, name: name.trim(), color, role })
+    else if (editing)
+      mutations.update.mutate({
+        id: editing.id,
+        name: name.trim(),
+        color,
+        role,
+        birthday: birthday || null,
+        birthYear: birthYear ? Number(birthYear) : null
+      })
     setEditing(null)
   }
 
@@ -246,6 +260,28 @@ function FamilyTab() {
                 { value: 'child', label: 'Child' }
               ]}
             />
+          </div>
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <FieldLabel>Birthday</FieldLabel>
+              <input
+                type="text"
+                value={birthday}
+                onChange={(e) => setBirthday(e.target.value)}
+                placeholder="MM-DD"
+                className="min-h-11 w-full rounded-xl border border-line bg-paper px-3 text-base font-semibold outline-none placeholder:text-ink-faint focus:border-ember"
+              />
+            </div>
+            <div className="w-28">
+              <FieldLabel>Year</FieldLabel>
+              <input
+                type="text"
+                value={birthYear}
+                onChange={(e) => setBirthYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="optional"
+                className="min-h-11 w-full rounded-xl border border-line bg-paper px-3 text-base font-semibold outline-none placeholder:text-ink-faint focus:border-ember"
+              />
+            </div>
           </div>
           <div className="mt-2 flex gap-3">
             {editing !== 'new' && editing && (
@@ -710,6 +746,7 @@ function ChoresTab() {
   const [editingChore, setEditingChore] = useState<ChoreDto | 'new' | null>(null)
   const [choreTitle, setChoreTitle] = useState('')
   const [chorePerson, setChorePerson] = useState<string | null>(null)
+  const [choreRotation, setChoreRotation] = useState<string[]>([])
   const [choreStars, setChoreStars] = useState(1)
   const [schedule, setSchedule] = useState<ScheduleKind>('daily')
   const [weekdays, setWeekdays] = useState<number[]>([])
@@ -728,9 +765,11 @@ function ChoresTab() {
       setSchedule('daily')
       setWeekdays([])
       setRoutine('any')
+      setChoreRotation([])
     } else {
       setChoreTitle(c.title)
       setChorePerson(c.personId)
+      setChoreRotation(c.rotationPersonIds ?? [])
       setChoreStars(c.starsValue)
       setSchedule(scheduleOf(c.recurrence))
       setWeekdays(c.recurrence?.byWeekdays ?? [])
@@ -749,6 +788,7 @@ function ChoresTab() {
     const common = {
       title: choreTitle.trim(),
       personId: chorePerson,
+      rotationPersonIds: choreRotation.length >= 2 ? choreRotation : [],
       starsValue: choreStars,
       recurrence,
       routine: routine === 'any' ? null : routine
@@ -872,6 +912,35 @@ function ChoresTab() {
                     key={p.id}
                     type="button"
                     onClick={() => setChorePerson(p.id)}
+                    className={`pressable rounded-full border-2 px-4 py-2 text-base font-bold ${
+                      on ? 'border-transparent' : 'border-line bg-card text-ink-soft'
+                    }`}
+                    style={on ? { backgroundColor: p.color, color: textOn(p.color) } : undefined}
+                  >
+                    {p.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div>
+            <FieldLabel>Rotate between (optional)</FieldLabel>
+            <p className="mb-2 text-sm font-semibold text-ink-faint">
+              Pick 2+ people to alternate this chore weekly — overrides "Who".
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {people.map((p) => {
+                const on = choreRotation.includes(p.id)
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() =>
+                      setChoreRotation((prev) =>
+                        prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                      )
+                    }
+                    aria-pressed={on}
                     className={`pressable rounded-full border-2 px-4 py-2 text-base font-bold ${
                       on ? 'border-transparent' : 'border-line bg-card text-ink-soft'
                     }`}
@@ -1738,6 +1807,57 @@ function SleepSection() {
   )
 }
 
+function NightDimmingSection() {
+  const { data: settings } = useSettings()
+  const mutation = useSettingsMutation()
+  if (!settings) return null
+  const nd = settings.nightDimming
+  return (
+    <div>
+      <FieldLabel>Night dimming</FieldLabel>
+      <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+        <div className="flex items-center gap-3">
+          <span className="flex-1 text-base font-semibold text-ink-soft">
+            Dim the screen during these hours — softer than full sleep, still readable.
+          </span>
+          <Toggle checked={nd.enabled} onChange={(enabled) => mutation.mutate({ nightDimming: { ...nd, enabled } })} label="Night dimming" />
+        </div>
+        {nd.enabled && (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <TimeField
+                label="Dim at"
+                minutes={hhMmToMinutes(nd.start)}
+                timeFormat={settings.timeFormat}
+                onChange={(m) => mutation.mutate({ nightDimming: { ...nd, start: minutesToHhMm(m) } })}
+              />
+              <TimeField
+                label="Brighten at"
+                minutes={hhMmToMinutes(nd.end)}
+                timeFormat={settings.timeFormat}
+                onChange={(m) => mutation.mutate({ nightDimming: { ...nd, end: minutesToHhMm(m) } })}
+              />
+            </div>
+            <div>
+              <FieldLabel>Brightness ({nd.level}%)</FieldLabel>
+              <input
+                type="range"
+                min={10}
+                max={90}
+                step={5}
+                value={nd.level}
+                onChange={(e) => mutation.mutate({ nightDimming: { ...nd, level: Number(e.target.value) } })}
+                className="w-full accent-[var(--color-ember)]"
+                aria-label="Dimming level"
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function GeneralTab() {
   const { data: settings } = useSettings()
   const mutation = useSettingsMutation()
@@ -1770,6 +1890,7 @@ function GeneralTab() {
       <DoorbellSection />
       <BackupSection />
       <SleepSection />
+      <NightDimmingSection />
       <ParentalLockSection />
       <CompanionSection />
       <div>

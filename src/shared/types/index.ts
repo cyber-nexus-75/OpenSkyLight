@@ -8,6 +8,10 @@ export interface PersonDto {
   sortOrder: number
   /** osl-avatar:// URL, or null when the person has no photo (renderer falls back to initials) */
   avatarUrl: string | null
+  /** birthday as MM-DD; null = not set */
+  birthday: string | null
+  /** birth year for age display; null = hide age */
+  birthYear: number | null
 }
 
 export interface PersonCreateInput {
@@ -22,6 +26,10 @@ export interface PersonUpdateInput {
   color?: string
   role?: PersonRole
   sortOrder?: number
+  /** MM-DD or null to clear; undefined = leave unchanged */
+  birthday?: string | null
+  /** null clears; undefined = leave unchanged */
+  birthYear?: number | null
 }
 
 /** Raw avatar upload: PNG/JPEG image bytes, base64-encoded. Main resizes to 256x256. */
@@ -187,6 +195,8 @@ export type HomeTileType =
   | 'camera'
   | 'birdnet'
   | 'timer'
+  | 'birthdays'
+  | 'wallnote'
 
 export interface HomeTileConfig {
   /** 'list' tiles: which list to show */
@@ -250,6 +260,8 @@ export interface ChoreDto {
   title: string
   icon: string | null
   personId: string
+  /** 2+ person ids alternating weekly; empty = fixed assignment */
+  rotationPersonIds: string[]
   starsValue: number
   /** null = one-time chore on anchorDate */
   recurrence: RecurrenceInput | null
@@ -263,6 +275,8 @@ export interface ChoreDto {
 export interface ChoreCreateInput {
   title: string
   personId: string
+  /** 2+ ids = rotate weekly between these people; omit/empty = fixed personId */
+  rotationPersonIds?: string[]
   starsValue: number
   recurrence?: RecurrenceInput | null
   anchorDate?: string
@@ -273,6 +287,8 @@ export interface ChoreUpdateInput {
   id: string
   title?: string
   personId?: string
+  /** empty array clears the rotation; undefined = leave unchanged */
+  rotationPersonIds?: string[]
   starsValue?: number
   recurrence?: RecurrenceInput | null
   anchorDate?: string
@@ -323,6 +339,8 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'auto'
   weather: { lat: number; lon: number; label: string } | null
   sleep: { enabled: boolean; start: string; end: string }
+  /** dim the screen during these hours (independent of sleep) */
+  nightDimming: { enabled: boolean; start: string; end: string; level: number }
   screensaver: { folder: string | null; idleMinutes: number }
   launchOnStartup: boolean
   homeLayout: HomeTile[]
@@ -342,6 +360,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'auto',
   weather: null,
   sleep: { enabled: false, start: '21:30', end: '06:30' },
+  nightDimming: { enabled: false, start: '21:00', end: '06:30', level: 40 },
   screensaver: { folder: null, idleMinutes: 10 },
   launchOnStartup: false,
   homeLayout: DEFAULT_HOME_LAYOUT,

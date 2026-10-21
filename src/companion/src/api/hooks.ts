@@ -141,3 +141,18 @@ export function useAiImport() {
 export function useAvatarMutation() {
   return useInvalidatingMutation((input: AvatarSetInput) => rpc('people:setAvatar', input), [['people']])
 }
+
+export function useWallNote() {
+  return useQuery({
+    queryKey: ['wallnote'],
+    queryFn: () => rpc('wallnote:get', undefined),
+    ...LIVE
+  })
+}
+
+export function useWallNoteMutation() {
+  return useInvalidatingMutation(
+    (input: { text: string }) => rpc('wallnote:set', input),
+    [['wallnote']]
+  )
+}

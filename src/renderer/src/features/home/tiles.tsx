@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import mpegts from 'mpegts.js'
 import type { HomeTile } from '@shared/types'
 import { presetById } from '@shared/rss'
@@ -607,6 +607,119 @@ export function PhotoTile({ tile }: TileProps) {
   return (
     <div className="-m-4 h-[calc(100%+2rem)] overflow-hidden">
       <img key={src} src={src} alt="" className="h-full w-full object-cover" style={{ animation: 'fade-in 1s ease backwards' }} />
+    </div>
+  )
+}
+
+
+/** Days-until the next occurrence of MM-DD in the local zone. */
+function daysUntilBirthday(mmdd: string): number {
+  const [m, d] = mmdd.split('-').map(Number)
+  const now = DateTime.local()
+  let next = now.set({ month: m, day: d })
+  if (next.startOf('day') < now.startOf('day')) next = next.plus({ years: 1 })
+  return Math.round(next.startOf('day').diff(now.startOf('day'), 'days').days)
+}
+
+export function BirthdaysTile({ compact }: TileProps) {
+  const { data: people = [] } = usePeople()
+  const today = DateTime.local().toFormat('MM-dd')
+  const withBirthdays = people
+    .filter((p) => p.birthday)
+    .map((p) => ({ person: p, days: daysUntilBirthday(p.birthday!) }))
+    .sort((a, b) => a.days - b.days)
+    .slice(0, compact ? 3 : 6)
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <TileTitle>Birthdays</TileTitle>
+      {withBirthdays.length === 0 ? (
+        <Placeholder>Add birthdays in Settings → Family</Placeholder>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col justify-center gap-1.5 overflow-hidden">
+          {withBirthdays.map(({ person, days }) => {
+            const isToday = person.birthday === today
+            const turning = person.birthYear ? new Date().getFullYear() - person.birthYear + (days === 0 ? 1 : 0) : null
+            return (
+              <div key={person.id} className="flex items-center gap-2">
+                <Avatar person={person} className="h-8 w-8 shrink-0 rounded-full text-[10px]" />
+                <span className="min-w-0 flex-1 truncate text-sm font-bold">{person.name}</span>
+                <span
+                  className={`shrink-0 text-sm font-extrabold ${isToday ? 'text-ember' : 'text-ink-soft'}`}
+                >
+                  {isToday
+                    ? `🎉${turning ? ` turns ${turning}` : ' today'}!`
+                    : days === 1
+                      ? 'tomorrow'
+                      : `${days}d`}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+export function WallNoteTile({ compact }: TileProps) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const note = useQuery({
+    queryKey: ['wallnote'],
+    queryFn: () => ipcInvoke('wallnote:get', undefined),
+    staleTime: 60_000
+  })
+  // live updates when someone edits from the phone
+  useEffect(() => {
+    return window.osl.on('push:wallnoteChanged', () => {
+      void queryClient.invalidateQueries({ queryKey: ['wallnote'] })
+    })
+  }, [queryClient])
+  const save = (): void => {
+    void ipcInvoke('wallnote:set', { text: draft }).then(() => {
+      void queryClient.invalidateQueries({ queryKey: ['wallnote'] })
+      setEditing(false)
+    })
+  }
+  const text = note.data?.text ?? ''
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <TileTitle>Note</TileTitle>
+      {editing ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="min-h-0 flex-1 w-full resize-none rounded-xl border border-line bg-paper p-2 text-sm font-semibold outline-none focus:border-ember"
+            placeholder="Where are the keys?"
+          />
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setEditing(false)} className="pressable rounded-xl bg-paper-deep px-3 py-2 text-sm font-extrabold text-ink-soft">
+              Cancel
+            </button>
+            <button type="button" onClick={save} className="pressable flex-1 rounded-xl bg-ember px-3 py-2 text-sm font-extrabold text-white">
+              Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(text)
+            setEditing(true)
+          }}
+          className="pressable min-h-0 flex-1 overflow-hidden text-left"
+        >
+          {text ? (
+            <p className={`whitespace-pre-wrap font-semibold text-ink-soft ${compact ? 'text-sm line-clamp-4' : 'text-base line-clamp-6'}`}>{text}</p>
+          ) : (
+            <p className="text-sm font-semibold text-ink-faint">Tap to write a note…</p>
+          )}
+        </button>
+      )}
     </div>
   )
 }
