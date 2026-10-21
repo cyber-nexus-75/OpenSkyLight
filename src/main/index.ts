@@ -32,6 +32,7 @@ import { createUnifiService } from './services/unifiService'
 import { createWebdavService } from './services/webdavService'
 import { createAiService } from './services/aiService'
 import { createDoorbellService } from './services/doorbellService'
+import { createBackupService } from './services/backupService'
 import { createBirdNetService } from './services/birdnetService'
 import { createGoogleAuth } from './sync/googleAuth'
 import { createGoogleSync } from './sync/googleSync'
@@ -59,10 +60,16 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
-    const { db } = openDatabase(join(app.getPath('userData'), 'openskylight.db'))
+    const { db, sqlite } = openDatabase(join(app.getPath('userData'), 'openskylight.db'))
     const deviceTz = (): string => DateTime.local().zoneName ?? 'UTC'
 
     const settings = createSettingsService(db)
+    const backupService = createBackupService({
+      sqlite,
+      getAllSettings: () => settings.getAll() as unknown as Record<string, unknown>,
+      getRaw: (key) => settings.getRaw(key),
+      setRaw: (key, value) => settings.setRaw(key, value)
+    })
     const avatars = createAvatarService({ rootDir: app.getPath('userData') })
     const webdavService = createWebdavService({
       settings,
@@ -104,6 +111,10 @@ if (!gotLock) {
       google: googleSync,
       caldav: caldavSync,
       webdav: webdavService,
+      backup: {
+        autoBackup: () =>
+          backupService.autoBackup((fileName, bytes) => webdavService.uploadFile(fileName, bytes))
+      },
       outbox,
       ics: icsSync,
       settings,
@@ -153,6 +164,7 @@ if (!gotLock) {
       webdav: webdavService,
       ai: aiService,
       doorbell: doorbellService,
+      backup: backupService,
       birdnet: createBirdNetService(),
       companion
     }

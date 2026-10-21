@@ -37,6 +37,7 @@ import { PinDialog } from '../../components/PinDialog'
 import { TimeField } from '../../components/DateTimePickers'
 import { ipcInvoke } from '../../api/client'
 import { useUi } from '../../stores/uiStore'
+import { useToasts } from '../../stores/toastStore'
 import { BigButton, Dialog, FieldLabel, SegmentedControl, Sheet, Toggle } from '../../components/ui'
 import { OskInput } from '../../components/Osk'
 import { PlusIcon } from '../../components/icons'
@@ -1231,6 +1232,102 @@ function hhMmToMinutes(s: string): number {
   return (h || 0) * 60 + (m || 0)
 }
 
+function BackupSection() {
+  const queryClient = useQueryClient()
+  const pushToast = useToasts((s) => s.push)
+  const status = useQuery({
+    queryKey: ['backupStatus'],
+    queryFn: () => ipcInvoke('backup:getStatus', undefined)
+  })
+  const remote = useQuery({
+    queryKey: ['backupRemote'],
+    queryFn: () => ipcInvoke('backup:listRemote', undefined),
+    staleTime: 60_000
+  })
+  const run = useMutation({
+    mutationFn: (fn: () => Promise<unknown>) => fn(),
+    onSuccess: (_data, fn) => {
+      void queryClient.invalidateQueries({ queryKey: ['backupStatus'] })
+      void queryClient.invalidateQueries({ queryKey: ['backupRemote'] })
+      void queryClient.invalidateQueries({ queryKey: ['people'] })
+      void queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
+      void queryClient.invalidateQueries({ queryKey: ['settings'] })
+      fn === undefined // no-op to keep ts happy about the unused arg
+    },
+    onError: (err: Error) => pushToast(err.message)
+  })
+  const st = status.data
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+      <FieldLabel>Backup &amp; restore</FieldLabel>
+      <p className="text-sm font-semibold text-ink-faint">
+        Backs up the whole family dataset (people, events, chores, stars, lists, meals,
+        and settings) as one JSON file. Credentials are never included — re-enter them on
+        a new system. Automatic backups go to your WebDAV photo folder (backups/
+        subfolder) once a day when it's connected.
+      </p>
+      {st?.lastAutoBackupAt && (
+        <p className="text-sm font-bold text-ink-faint">
+          Last auto-backup: {new Date(st.lastAutoBackupAt).toLocaleString()}
+          {st.lastAutoBackupError ? ` · error: ${st.lastAutoBackupError}` : ''}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <BigButton
+          variant="ghost"
+          onClick={() => run.mutate(() => ipcInvoke('backup:exportToFile', undefined))}
+          disabled={run.isPending}
+        >
+          Save backup to a file
+        </BigButton>
+        <BigButton
+          variant="ghost"
+          onClick={() => run.mutate(() => ipcInvoke('backup:uploadNow', undefined))}
+          disabled={run.isPending}
+        >
+          Back up to Nextcloud now
+        </BigButton>
+        <BigButton
+          variant="ghost"
+          onClick={() => run.mutate(() => ipcInvoke('backup:restoreFromFile', undefined))}
+          disabled={run.isPending}
+        >
+          Restore from a file
+        </BigButton>
+      </div>
+      {remote.data && remote.data.length > 0 && (
+        <div>
+          <span className="mb-1 block text-xs font-extrabold text-ink-faint">
+            BACKUPS ON NEXTCLOUD (newest first, max 30)
+          </span>
+          <div className="flex max-h-44 flex-col gap-1 overflow-y-auto">
+            {remote.data.slice(0, 30).map((b) => (
+              <div key={b.name} className="flex items-center gap-2 rounded-xl bg-card px-3 py-1.5">
+                <span className="min-w-0 flex-1 truncate text-sm font-bold">{b.name}</span>
+                <span className="text-xs font-bold text-ink-faint">
+                  {(b.size / 1024).toFixed(0)} KB
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Restore ${b.name}? This replaces all current data.`)) {
+                      run.mutate(() => ipcInvoke('backup:restoreFromRemote', { name: b.name }))
+                    }
+                  }}
+                  className="pressable rounded-lg bg-ember px-3 py-1 text-sm font-extrabold text-white"
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DoorbellSection() {
   const queryClient = useQueryClient()
   const { data: cameras = [] } = useQuery({ queryKey: ['cameras'], queryFn: () => ipcInvoke('camera:list', undefined) })
@@ -1671,6 +1768,7 @@ function GeneralTab() {
       <WebdavPhotosSection />
       <AiImportSection />
       <DoorbellSection />
+      <BackupSection />
       <SleepSection />
       <ParentalLockSection />
       <CompanionSection />

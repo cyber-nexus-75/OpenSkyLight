@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow } from 'electron'
+import { app, dialog, ipcMain, BrowserWindow } from 'electron'
 import { DateTime } from 'luxon'
 import type { ZodType } from 'zod'
 import { ZodError } from 'zod'
@@ -6,6 +6,7 @@ import type { IpcChannel, IpcContract, IpcResult } from '@shared/ipc/contract'
 import * as s from '@shared/ipc/schemas'
 import { AppError, notFound } from '../services/errors'
 import { decodeBase64Image } from '../services/avatarService'
+import { readFileSync, writeFileSync } from 'node:fs'
 import type { SettingsService } from '../services/settingsService'
 import type { PeopleService } from '../services/peopleService'
 import type { AvatarService } from '../services/avatarService'
@@ -31,6 +32,7 @@ import type { UnifiService } from '../services/unifiService'
 import type { WebdavService } from '../services/webdavService'
 import type { AiService } from '../services/aiService'
 import type { DoorbellService } from '../services/doorbellService'
+import type { BackupService } from '../services/backupService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
 
@@ -60,6 +62,7 @@ export interface Services {
   webdav: WebdavService
   ai: AiService
   doorbell: DoorbellService
+  backup: BackupService
   birdnet: BirdNetService
   companion: CompanionServer
 }
@@ -107,6 +110,8 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'ai:clearConfig',
   'doorbell:setCamera',
   'doorbell:rotateToken',
+  'backup:restoreFromFile',
+  'backup:restoreFromRemote',
   'companion:issueToken',
   'companion:unpairAll'
 ])
@@ -367,6 +372,56 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('ai:importEvents', s.aiImportSchema, async (req) => ({
     drafts: await services.ai.importEvents(req)
   }))
+  handle('backup:exportToFile', null, async () => {
+    const file = services.backup.exportBackup()
+    const path = `openskylight-backup-${DateTime.now().toFormat('yyyyMMdd-HHmm')}.json`
+    const result = await dialog.showSaveDialog({
+      title: 'Save backup',
+      defaultPath: path,
+      filters: [{ name: 'OpenSkyLight backup', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) throw new AppError('CANCELLED', 'Export cancelled')
+    writeFileSync(result.filePath, JSON.stringify(file, null, 2))
+    return { path: result.filePath }
+  })
+  handle('backup:restoreFromFile', null, async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose a backup to restore',
+      filters: [{ name: 'OpenSkyLight backup', extensions: ['json'] }],
+      properties: ['openFile']
+    })
+    if (result.canceled || result.filePaths.length === 0) throw new AppError('CANCELLED', 'Restore cancelled')
+    const raw = JSON.parse(readFileSync(result.filePaths[0], 'utf8'))
+    const counts = services.backup.restoreBackup(raw)
+    broadcast('push:dataChanged', { domain: 'events' })
+    broadcast('push:dataChanged', { domain: 'people' })
+    broadcast('push:dataChanged', { domain: 'chores' })
+    broadcast('push:dataChanged', { domain: 'calendars' })
+    broadcast('push:dataChanged', { domain: 'settings' })
+    return counts
+  })
+  handle('backup:uploadNow', null, async () => {
+    const file = services.backup.exportBackup()
+    const fileName = `openskylight-backup-${DateTime.now().toFormat('yyyyMMdd-HHmm')}.json`
+    await services.webdav.uploadFile(fileName, Buffer.from(JSON.stringify(file)))
+    return { fileName }
+  })
+  handle('backup:listRemote', null, async () => {
+    const files = await services.webdav.listBackups()
+    return files.sort((a, b) => b.name.localeCompare(a.name)).slice(0, 30)
+  })
+  handle('backup:restoreFromRemote', s.backupRestoreSchema, async (req) => {
+    const bytes = await services.webdav.downloadBackup(req.name)
+    const raw = JSON.parse(bytes.toString('utf8'))
+    const counts = services.backup.restoreBackup(raw)
+    broadcast('push:dataChanged', { domain: 'events' })
+    broadcast('push:dataChanged', { domain: 'people' })
+    broadcast('push:dataChanged', { domain: 'chores' })
+    broadcast('push:dataChanged', { domain: 'calendars' })
+    broadcast('push:dataChanged', { domain: 'settings' })
+    return counts
+  })
+  handle('backup:getStatus', null, () => services.backup.autoStatus())
   handle('doorbell:getStatus', null, () => services.doorbell.getStatus())
   handle('doorbell:setCamera', s.doorbellCameraSchema, (req) => services.doorbell.setCamera(req.cameraId))
   handle('doorbell:rotateToken', null, () => services.doorbell.rotateToken())

@@ -185,6 +185,7 @@ export const icsAddSchema = z.object({
   name: z.string().trim().min(1).max(80),
   color: hexColor
 })
+export const backupRestoreSchema = z.object({ name: z.string().trim().min(1).max(200) })
 export const doorbellCameraSchema = z.object({
   cameraId: id.nullable()
 })

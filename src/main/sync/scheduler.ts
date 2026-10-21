@@ -26,6 +26,7 @@ export function createSyncManager(deps: {
   google: GoogleSync
   caldav?: CalDavSync
   webdav?: Pick<WebdavService, 'pull'>
+  backup?: { autoBackup: () => Promise<boolean> }
   outbox: OutboxWorker
   ics: IcsSync
   settings?: Pick<SettingsService, 'getAll'>
@@ -105,7 +106,15 @@ export function createSyncManager(deps: {
           console.error('[sync] webdav photo pull failed:', err instanceof Error ? err.message : err)
         }
       }
-      // 5. ICS feeds on the slow cadence
+      // 5. daily backup to the WebDAV folder (no-op if not due)
+      if (opts.ics && deps.backup) {
+        try {
+          await deps.backup.autoBackup()
+        } catch {
+          // autoBackup records its own errors; never block calendar sync
+        }
+      }
+      // 6. ICS feeds on the slow cadence
       if (opts.ics) {
         const icsCals = db
           .select()

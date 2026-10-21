@@ -225,6 +225,15 @@ export type IpcContract = {
   'ai:getStatus': { req: void; res: { configured: boolean; endpointUrl: string | null; model: string | null } }
   'ai:setConfig': { req: { endpointUrl: string; model: string; apiKey: string }; res: void }
   'ai:clearConfig': { req: void; res: void }
+  'backup:exportToFile': { req: void; res: { path: string } }
+  'backup:restoreFromFile': { req: void; res: { counts: Record<string, number> } }
+  'backup:uploadNow': { req: void; res: { fileName: string } }
+  'backup:listRemote': { req: void; res: { name: string; etag: string; size: number }[] }
+  'backup:restoreFromRemote': { req: { name: string }; res: { counts: Record<string, number> } }
+  'backup:getStatus': {
+    req: void
+    res: { lastAutoBackupAt: string | null; lastAutoBackupError: string | null }
+  }
   'doorbell:getStatus': {
     req: void
     res: { webhookToken: string | null; webhookUrl: string | null; cameraId: string | null }
