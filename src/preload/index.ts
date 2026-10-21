@@ -25,6 +25,8 @@ const ALLOWED_INVOKE_PREFIXES = [
   'unifi:',
   'webdav:',
   'ai:',
+  'doorbell:',
+  'backup:',
   'companion:',
   'birdnet:'
 ]

@@ -31,6 +31,8 @@ import { createCameraService } from './services/cameraService'
 import { createUnifiService } from './services/unifiService'
 import { createWebdavService } from './services/webdavService'
 import { createAiService } from './services/aiService'
+import { createDoorbellService } from './services/doorbellService'
+import { createBackupService } from './services/backupService'
 import { createBirdNetService } from './services/birdnetService'
 import { createGoogleAuth } from './sync/googleAuth'
 import { createGoogleSync } from './sync/googleSync'
@@ -58,16 +60,26 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
-    const { db } = openDatabase(join(app.getPath('userData'), 'openskylight.db'))
+    const { db, sqlite } = openDatabase(join(app.getPath('userData'), 'openskylight.db'))
     const deviceTz = (): string => DateTime.local().zoneName ?? 'UTC'
 
     const settings = createSettingsService(db)
+    const backupService = createBackupService({
+      sqlite,
+      getAllSettings: () => settings.getAll() as unknown as Record<string, unknown>,
+      getRaw: (key) => settings.getRaw(key),
+      setRaw: (key, value) => settings.setRaw(key, value)
+    })
     const avatars = createAvatarService({ rootDir: app.getPath('userData') })
     const webdavService = createWebdavService({
       settings,
       cacheDir: join(app.getPath('userData'), 'screensaver-cache')
     })
     const aiService = createAiService({ settings })
+    const doorbellService = createDoorbellService({
+      settings,
+      port: () => companion.boundPort() ?? settings.getAll().companion.port
+    })
     const kiosk = createKiosk({
       settings,
       broadcast,
@@ -99,6 +111,10 @@ if (!gotLock) {
       google: googleSync,
       caldav: caldavSync,
       webdav: webdavService,
+      backup: {
+        autoBackup: () =>
+          backupService.autoBackup((fileName, bytes) => webdavService.uploadFile(fileName, bytes))
+      },
       outbox,
       ics: icsSync,
       settings,
@@ -115,7 +131,10 @@ if (!gotLock) {
       version: app.getVersion(),
       staticRoot: join(__dirname, '../companion'),
       avatarBytes: (personId) => avatars.get(personId),
-      uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes)
+      uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes),
+      acceptDoorbellRing: (token) => doorbellService.acceptRing(token),
+      verifyDoorbellToken: (token) => doorbellService.verifyToken(token),
+      onDoorbellRing: () => broadcast('push:doorbellRing', { at: new Date().toISOString() })
     })
     app.on('will-quit', () => companion.shutdown())
 
@@ -144,6 +163,8 @@ if (!gotLock) {
       unifi: unifiService,
       webdav: webdavService,
       ai: aiService,
+      doorbell: doorbellService,
+      backup: backupService,
       birdnet: createBirdNetService(),
       companion
     }

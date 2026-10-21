@@ -76,7 +76,8 @@ export interface DavFileInfo {
 /** PROPFIND Depth:1 on the photo directory; returns photo files only. */
 export async function davList(
   fetchFn: DavFetch,
-  dirUrl: string
+  dirUrl: string,
+  extensions: Set<string> = PHOTO_EXTENSIONS
 ): Promise<DavFileInfo[]> {
   const res = await fetchFn(dirUrl, {
     method: 'PROPFIND',
@@ -98,7 +99,7 @@ export async function davList(
     if (!href || href.endsWith('/')) continue // the collection itself
     const name = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
     const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
-    if (!PHOTO_EXTENSIONS.has(ext)) continue
+    if (!extensions.has(ext)) continue
     const propstat = (Array.isArray(resp.propstat) ? resp.propstat[0] : resp.propstat) as Record<string, unknown> | undefined
     const prop = (propstat?.prop ?? {}) as Record<string, unknown>
     if (prop.resourcetype && typeof prop.resourcetype === 'object' && 'collection' in (prop.resourcetype as object)) continue
@@ -267,6 +268,42 @@ export function createWebdavService(deps: {
     }
   }
 
+  /** Upload arbitrary bytes (backups) without the photo-format checks or the pull. */
+  async function uploadFile(fileName: string, bytes: Buffer, fetchFn?: DavFetch): Promise<void> {
+    const creds = credentials()
+    if (!creds) throw new AppError('NOT_CONFIGURED', 'Connect the photo WebDAV folder in Settings first')
+    const fn = fetchFn ?? davFetch(creds)
+    const name = safeFileName(fileName)
+    // backups live in a subfolder so they don't rotate onto the screensaver
+    await fn(`${creds.url}backups/`, { method: 'MKCOL' }).catch(() => undefined)
+    const res = await fn(`${creds.url}backups/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: new Uint8Array(bytes)
+    })
+    if (!res.ok && res.status !== 201 && res.status !== 204) {
+      throw new AppError('WEBDAV_ERROR', `Upload failed: HTTP ${res.status}`)
+    }
+  }
+
+  /** List files in the backups/ subfolder (names + etags). */
+  async function listBackups(fetchFn?: DavFetch): Promise<DavFileInfo[]> {
+    const creds = credentials()
+    if (!creds) throw new AppError('NOT_CONFIGURED', 'Connect the photo WebDAV folder in Settings first')
+    const fn = fetchFn ?? davFetch(creds)
+    return davList(fn, `${creds.url}backups/`, new Set(['.json']))
+  }
+
+  /** Download one backup by name. */
+  async function downloadBackup(fileName: string, fetchFn?: DavFetch): Promise<Buffer> {
+    const creds = credentials()
+    if (!creds) throw new AppError('NOT_CONFIGURED', 'Connect the photo WebDAV folder in Settings first')
+    const fn = fetchFn ?? davFetch(creds)
+    const res = await fn(`${creds.url}backups/${encodeURIComponent(safeFileName(fileName))}`)
+    if (!res.ok) throw new AppError('WEBDAV_ERROR', `Download failed: HTTP ${res.status}`)
+    return Buffer.from(await res.arrayBuffer())
+  }
+
   /** Upload from the paired phone: PUT into the remote dir, then pull so the kiosk sees it. */
   async function upload(fileName: string, bytes: Buffer, fetchFn?: DavFetch): Promise<void> {
     const creds = credentials()
@@ -287,7 +324,7 @@ export function createWebdavService(deps: {
     }
   }
 
-  return { getStatus, connect, disconnect, pull, upload, listCache }
+  return { getStatus, connect, disconnect, pull, upload, uploadFile, listBackups, downloadBackup, listCache }
 }
 
 export type WebdavService = ReturnType<typeof createWebdavService>

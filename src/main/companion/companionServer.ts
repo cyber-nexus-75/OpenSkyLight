@@ -36,6 +36,12 @@ export interface CompanionServerDeps {
   avatarBytes: (personId: string) => Buffer | null
   /** Uploads a screensaver photo to the configured WebDAV folder. */
   uploadPhoto: (fileName: string, bytes: Buffer) => Promise<void>
+  /** Verdict for a doorbell webhook POST: ok / debounced / invalid. */
+  acceptDoorbellRing: (token: string) => 'ok' | 'debounced' | 'invalid'
+  /** Token-only check for GET probes — must not consume the ring. */
+  verifyDoorbellToken: (token: string) => boolean
+  /** Broadcast the ring to the kiosk renderer. */
+  onDoorbellRing: () => void
 }
 
 /**
@@ -45,7 +51,7 @@ export interface CompanionServerDeps {
  */
 export function createCompanionServer(deps: CompanionServerDeps) {
   let server: Server | null = null
-  let boundPort: number | null = null
+  let boundPortValue: number | null = null
   let lastError: string | null = null
   const authFails = new Map<string, { count: number; windowStart: number }>()
 
@@ -201,6 +207,34 @@ export function createCompanionServer(deps: CompanionServerDeps) {
       void handleRpc(req, res, rpcMatch[1])
       return
     }
+    const doorbellMatch = url.split('?')[0].match(/^\/api\/doorbell\/([A-Za-z0-9_-]+)$/)
+    if (doorbellMatch) {
+      // UniFi Protect webhooks POST with no auth they can sign; the unguessable
+      // token in the path IS the credential. GET is allowed so the Protect URL
+      // validator (which may probe with GET) and simple test tools work.
+      if (req.method !== 'POST' && req.method !== 'GET') {
+        res.writeHead(405).end()
+        return
+      }
+      if (req.method === 'GET') {
+        // URL-validator probe: verify the token without consuming the ring
+        if (!deps.verifyDoorbellToken(doorbellMatch[1])) {
+          res.writeHead(404).end()
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ring')
+        return
+      }
+      const verdict = deps.acceptDoorbellRing(doorbellMatch[1])
+      if (verdict === 'invalid') {
+        res.writeHead(404).end() // wrong token looks like a nonexistent path
+        return
+      }
+      // 'debounced' still acks with 200 so Protect doesn't retry-storm
+      res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ring')
+      if (verdict === 'ok') deps.onDoorbellRing()
+      return
+    }
     const avatarMatch = url.split('?')[0].match(/^\/api\/avatar\/([A-Za-z0-9_-]+)$/) // token as query param: <img> tags cannot send headers
     if (avatarMatch) {
       if (req.method !== 'GET') {
@@ -281,13 +315,13 @@ export function createCompanionServer(deps: CompanionServerDeps) {
       srv.close()
       if (server === srv) {
         server = null
-        boundPort = null
+        boundPortValue = null
       }
     })
     srv.listen(port, '0.0.0.0', () => {
       const addr = srv.address()
-      boundPort = typeof addr === 'object' && addr ? addr.port : port
-      console.log(`[companion] serving on 0.0.0.0:${boundPort}`)
+      boundPortValue = typeof addr === 'object' && addr ? addr.port : port
+      console.log(`[companion] serving on 0.0.0.0:${boundPortValue}`)
     })
     server = srv
   }
@@ -295,7 +329,7 @@ export function createCompanionServer(deps: CompanionServerDeps) {
   function stop(): void {
     server?.close()
     server = null
-    boundPort = null
+    boundPortValue = null
   }
 
   /** Reconcile the server with settings — called at boot and on every settings:set. */
@@ -305,18 +339,22 @@ export function createCompanionServer(deps: CompanionServerDeps) {
       stop()
       return
     }
-    if (server && boundPort === port) return
+    if (server && boundPortValue === port) return
     stop()
     start(port)
   }
 
+  function boundPort(): number | null {
+    return boundPortValue
+  }
+
   function getStatus(): { running: boolean; port: number; urls: string[]; pairedCount: number; lastError: string | null } {
     const { port } = deps.settings.getAll().companion
-    const running = server !== null && boundPort !== null
+    const running = server !== null && boundPortValue !== null
     return {
       running,
       port,
-      urls: running ? pickLanAddresses().map((ip) => `http://${ip}:${boundPort}/`) : [],
+      urls: running ? pickLanAddresses().map((ip) => `http://${ip}:${boundPortValue}/`) : [],
       pairedCount: deps.tokens.count(),
       lastError
     }
@@ -327,14 +365,14 @@ export function createCompanionServer(deps: CompanionServerDeps) {
     const { port } = deps.settings.getAll().companion
     const token = deps.tokens.issue()
     const [best] = pickLanAddresses()
-    return { url: `http://${best ?? 'localhost'}:${boundPort ?? port}/#t=${token}` }
+    return { url: `http://${best ?? 'localhost'}:${boundPortValue ?? port}/#t=${token}` }
   }
 
   function unpairAll(): void {
     deps.tokens.revokeAll()
   }
 
-  return { applySettings, getStatus, issueToken, unpairAll, stop, shutdown: stop }
+  return { applySettings, getStatus, boundPort, issueToken, unpairAll, stop, shutdown: stop }
 }
 
 export type CompanionServer = ReturnType<typeof createCompanionServer>

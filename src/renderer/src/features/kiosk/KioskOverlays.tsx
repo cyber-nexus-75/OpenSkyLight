@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import mpegts from 'mpegts.js'
 import { ipcInvoke } from '../../api/client'
 import { useSettings } from '../../api/hooks'
 import { ZONE } from '../../stores/uiStore'
@@ -84,6 +85,7 @@ export function KioskOverlays() {
   const [screensaver, setScreensaver] = useState(false)
   const [sleeping, setSleeping] = useState(false)
   const [awakeOverride, setAwakeOverride] = useState(false)
+  const [ringAt, setRingAt] = useState<string | null>(null)
   const overrideTimer = useRef<number | null>(null)
   const setCovered = useKioskState((s) => s.setCovered)
 
@@ -94,6 +96,11 @@ export function KioskOverlays() {
   }, [covered, setCovered])
 
   useEffect(() => {
+    const offRing = window.osl.on('push:doorbellRing', (d) => {
+      setRingAt((d as { at?: string })?.at ?? new Date().toISOString())
+      // a ring wakes the screensaver so the door is shown immediately
+      setScreensaver(false)
+    })
     const offIdle = window.osl.on('push:kioskIdle', (d) => {
       setScreensaver((d as { state?: string })?.state === 'screensaver')
     })
@@ -107,6 +114,7 @@ export function KioskOverlays() {
       }
     })
     return () => {
+      offRing()
       offIdle()
       offSleep()
     }
@@ -123,6 +131,109 @@ export function KioskOverlays() {
       />
     )
   }
+  if (ringAt) return <DoorbellOverlay ringAt={ringAt} onDismiss={() => setRingAt(null)} />
   if (screensaver) return <ScreensaverOverlay onDismiss={() => setScreensaver(false)} />
   return null
+}
+
+/** Doorbell ring: chime + live doorbell camera full-screen; auto-dismisses. */
+function DoorbellOverlay({ ringAt, onDismiss }: { ringAt: string; onDismiss: () => void }) {
+  const { data: status } = useQuery({
+    queryKey: ['doorbellStatus'],
+    queryFn: () => ipcInvoke('doorbell:getStatus', undefined)
+  })
+  const cameraId = status?.cameraId ?? null
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [dismissedAtRing, setDismissedAtRing] = useState(false)
+
+  // chime — a synthesized bell tone, no asset needed
+  useEffect(() => {
+    try {
+      const ctx = new AudioContext()
+      const now = ctx.currentTime
+      for (const t of [0, 0.35]) {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.value = 830
+        gain.gain.setValueAtTime(0.4, now + t)
+        gain.gain.exponentialRampToValueAtTime(0.001, now + t + 0.3)
+        osc.connect(gain).connect(ctx.destination)
+        osc.start(now + t)
+        osc.stop(now + t + 0.32)
+      }
+      const closer = (): void => void ctx.close()
+      setTimeout(closer, 1200)
+    } catch {
+      // audio is best-effort; the visual overlay is the real alert
+    }
+  }, [ringAt])
+
+  // auto-dismiss after 30s
+  useEffect(() => {
+    const timer = window.setTimeout(onDismiss, 30_000)
+    return () => window.clearTimeout(timer)
+  }, [ringAt, onDismiss])
+
+  // live camera stream while the overlay is up (same pipeline as camera tiles)
+  useEffect(() => {
+    const video = videoRef.current
+    if (!cameraId || !video || dismissedAtRing) return
+    if (typeof mpegts === 'undefined' || !mpegts.isSupported()) return
+    let player: mpegts.Player | null = null
+    let sessionId: string | null = null
+    let stopped = false
+    ipcInvoke('camera:start', { cameraId })
+      .then((res) => {
+        if (stopped) {
+          void ipcInvoke('camera:stop', { sessionId: res.sessionId })
+          return
+        }
+        sessionId = res.sessionId
+        player = mpegts.createPlayer(
+          { type: 'mpegts', isLive: true, url: res.wsUrl },
+          { enableStashBuffer: false, liveBufferLatencyChasing: true }
+        )
+        player.attachMediaElement(video)
+        player.load()
+        void player.play()?.catch(() => undefined)
+      })
+      .catch(() => undefined)
+    return () => {
+      stopped = true
+      try {
+        player?.destroy()
+      } catch {
+        // already torn down
+      }
+      if (sessionId) void ipcInvoke('camera:stop', { sessionId })
+    }
+  }, [cameraId, ringAt, dismissedAtRing])
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-ink/95 text-paper">
+      <div className="flex items-center justify-between px-8 py-6">
+        <h1 className="font-display text-4xl font-bold">🔔 Someone's at the door</h1>
+        <button
+          type="button"
+          onClick={() => {
+            setDismissedAtRing(true)
+            onDismiss()
+          }}
+          className="pressable rounded-2xl bg-paper/15 px-6 py-3 text-xl font-extrabold"
+        >
+          Dismiss
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 px-8 pb-8">
+        {cameraId ? (
+          <video ref={videoRef} className="h-full w-full rounded-card object-contain" autoPlay muted playsInline />
+        ) : (
+          <div className="flex h-full items-center justify-center text-2xl font-bold text-paper/70">
+            No doorbell camera selected — pick one in Settings → Doorbell
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
