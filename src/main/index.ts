@@ -19,6 +19,7 @@ import { createCompanionTokens } from './companion/companionTokens'
 import { createCompanionServer } from './companion/companionServer'
 import { createMainWindow } from './window'
 import { createWeatherService } from './services/weatherService'
+import { AppError } from './services/errors'
 import { createAuthService } from './services/authService'
 import { createChoresService } from './services/choresService'
 import { createRewardsService } from './services/rewardsService'
@@ -115,7 +116,19 @@ if (!gotLock) {
       version: app.getVersion(),
       staticRoot: join(__dirname, '../companion'),
       avatarBytes: (personId) => avatars.get(personId),
-      uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes)
+      uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes),
+      setAvatar: async (personId, bytes) => {
+        // the same validated people:setAvatar pipeline as the RPC route, just
+        // with the large-body limit — AppError codes surface to the HTTP layer
+        const result = await dispatch(
+          services,
+          channelTable,
+          'people:setAvatar',
+          { personId, data: bytes.toString('base64') },
+          { gate: 'none' }
+        )
+        if (!result.ok) throw new AppError(result.error.code, result.error.message)
+      }
     })
     app.on('will-quit', () => companion.shutdown())
 

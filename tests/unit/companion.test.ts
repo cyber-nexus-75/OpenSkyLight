@@ -110,7 +110,8 @@ describe('companionServer', () => {
       version: '0.0.0-test',
       staticRoot,
       avatarBytes: () => null,
-      uploadPhoto: async () => undefined
+      uploadPhoto: async () => undefined,
+      setAvatar: async () => undefined
     })
     server.applySettings()
     // wait for listen
@@ -159,7 +160,8 @@ describe('companionServer', () => {
       version: '0.0.0-test',
       staticRoot,
       avatarBytes: (personId) => (personId === 'p1' ? png : null),
-      uploadPhoto: async () => undefined
+      uploadPhoto: async () => undefined,
+      setAvatar: async () => undefined
     })
     server.applySettings()
     for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
@@ -206,7 +208,8 @@ describe('companionServer', () => {
       avatarBytes: () => null,
       uploadPhoto: async (name, bytes) => {
         uploads.push({ name, bytes })
-      }
+      },
+      setAvatar: async () => undefined
     })
     server.applySettings()
     for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
@@ -246,7 +249,8 @@ describe('companionServer', () => {
       avatarBytes: () => null,
       uploadPhoto: async () => {
         throw new Error('WebDAV not configured')
-      }
+      },
+      setAvatar: async () => undefined
     })
     server.applySettings()
     for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
@@ -261,6 +265,52 @@ describe('companionServer', () => {
     const json = (await fail.json()) as { ok: boolean; error: { code: string; message: string } }
     expect(json.ok).toBe(false)
     expect(json.error.message).toContain('WebDAV not configured')
+  })
+
+  it('avatar upload requires a token and forwards bytes to the setAvatar dep', async () => {
+    staticRoot = mkdtempSync(join(tmpdir(), 'osl-companion-'))
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html>')
+    const settings = settingsStub({ enabled: true, port: 0 })
+    const tokens = createCompanionTokens(settings)
+    const received: { personId: string; bytes: Buffer }[] = []
+    server = createCompanionServer({
+      settings,
+      tokens,
+      dispatch: async () => ({ ok: true, data: null }),
+      version: '0.0.0-test',
+      staticRoot,
+      avatarBytes: () => null,
+      uploadPhoto: async () => undefined,
+      setAvatar: async (personId, bytes) => {
+        received.push({ personId, bytes })
+      }
+    })
+    server.applySettings()
+    for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
+    const port = Number(new URL(server.issueToken().url).port)
+    const base = `http://127.0.0.1:${port}`
+    const token = server.issueToken().url.split('#t=')[1]
+    const bytes = Buffer.from('fake-png-bytes')
+
+    const noAuth = await fetch(`${base}/api/avatar-upload?personId=p1`, { method: 'POST', body: bytes })
+    expect(noAuth.status).toBe(401)
+    expect(received.length).toBe(0)
+
+    const badId = await fetch(`${base}/api/avatar-upload?personId=../evil`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: bytes
+    })
+    expect(badId.status).toBe(400)
+
+    const ok = await fetch(`${base}/api/avatar-upload?personId=p1`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
+      body: bytes
+    })
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toEqual({ ok: true, data: null })
+    expect(received).toEqual([{ personId: 'p1', bytes }])
   })
 
   it('rejects channels outside the allowlist even with a valid token', async () => {

@@ -20,8 +20,8 @@ export const personUpdateSchema = z.object({
 })
 export const avatarSetSchema = z.object({
   personId: id,
-  // base64-encoded PNG/JPEG image bytes
-  data: z.string().min(1)
+  // base64-encoded PNG/JPEG image bytes — cap at ~2.9 MB base64 (2 MB decoded)
+  data: z.string().min(1).max(3_000_000)
 })
 
 export const calendarCreateSchema = z.object({
@@ -192,7 +192,8 @@ export const aiConfigSchema = z.object({
 })
 export const aiImportSchema = z.object({
   text: z.string().max(20_000),
-  images: z.array(z.string().min(1)).max(5),
+  // base64 attachments — 10 MB each keeps vision photos usable without unbounded buffering
+  images: z.array(z.string().min(1).max(14_000_000)).max(5),
   tz: z.string().min(1).max(64)
 })
 export const webdavConnectSchema = z.object({
