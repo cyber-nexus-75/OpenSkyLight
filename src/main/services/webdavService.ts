@@ -221,6 +221,13 @@ export function createWebdavService(deps: {
     let changed = 0
     const remoteNames = new Set<string>()
     for (const file of remote) {
+      // a hostile server must not smuggle names that escape the cache dir
+      // (traversal, Windows ADS, dotfiles) — same rules as uploads
+      try {
+        safeFileName(file.name)
+      } catch {
+        continue
+      }
       remoteNames.add(file.name)
       if (localEtags.get(file.name) === file.etag) continue
       const res = await fn(`${creds.url}${encodeURIComponent(file.name)}`)

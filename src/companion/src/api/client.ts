@@ -59,6 +59,25 @@ export async function rpc<K extends IpcChannel>(
   return json.data
 }
 
+/** Avatar upload bypasses the 64 KB RPC limit via the dedicated large-body route. */
+export async function uploadAvatar(personId: string, bytes: ArrayBuffer): Promise<void> {
+  const res = await fetch(`/api/avatar-upload?personId=${encodeURIComponent(personId)}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getToken() ?? ''}`,
+      'Content-Type': 'application/octet-stream'
+    },
+    body: new Uint8Array(bytes)
+  })
+  if (res.status === 401) {
+    clearToken()
+    onUnauthorized()
+    throw new RpcError('UNAUTHORIZED', 'Not paired')
+  }
+  const json = (await res.json()) as IpcResult<null>
+  if (!json.ok) throw new RpcError(json.error.code, json.error.message)
+}
+
 /** Upload a screensaver photo; goes to the kiosk's WebDAV (Nextcloud) folder. */
 export async function uploadPhoto(fileName: string, bytes: Uint8Array): Promise<void> {
   const res = await fetch(`/api/photo?name=${encodeURIComponent(fileName)}`, {

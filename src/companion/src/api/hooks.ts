@@ -1,13 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
-  AvatarSetInput,
   ChoreCreateInput,
   ChoreUpdateInput,
   EventCreateInput,
   EventDeleteInput,
   EventUpdateInput
 } from '@shared/types'
-import { rpc } from './client'
+import { rpc, uploadAvatar } from './client'
 
 /** Phone tabs get suspended constantly — focus/reconnect refetch is the real
  * freshness mechanism; the 20s interval covers a phone left on the counter. */
@@ -139,5 +138,9 @@ export function useAiImport() {
 }
 
 export function useAvatarMutation() {
-  return useInvalidatingMutation((input: AvatarSetInput) => rpc('people:setAvatar', input), [['people']])
+  // raw bytes over the dedicated large-body route — a 256px PNG busts the 64 KB RPC cap
+  return useInvalidatingMutation(
+    (input: { personId: string; bytes: ArrayBuffer }) => uploadAvatar(input.personId, input.bytes),
+    [['people']]
+  )
 }

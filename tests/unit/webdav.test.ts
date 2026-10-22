@@ -132,6 +132,23 @@ describe('webdavService', () => {
     expect(readdirSync(cacheDir).some((f) => f === 'sunset.png')).toBe(true)
   })
 
+  it('pull skips hostile remote names instead of writing them into the cache', async () => {
+    const settings = settingsStub()
+    const svc = createWebdavService({ settings, cacheDir })
+    const remote = new Map<string, { etag: string; bytes: Buffer }>([
+      ['good.jpg', { etag: '"g"', bytes: PNG }],
+      ['.hidden.jpg', { etag: '"h"', bytes: PNG }]
+    ])
+    settings.setRaw('screensaver.webdav.url', 'https://dav/Photos/')
+    settings.setRaw('screensaver.webdav.username', 'alice')
+    settings.setRaw('screensaver.webdav.passwordEnc', Buffer.from('plain:secret').toString('base64'))
+
+    const changed = await svc.pull(stubServer(remote))
+    expect(changed).toBe(1)
+    expect(existsSync(join(cacheDir, 'good.jpg'))).toBe(true)
+    expect(readdirSync(cacheDir).some((f) => f === '.hidden.jpg')).toBe(false)
+  })
+
   it('upload refuses path-traversal names', async () => {
     const settings = settingsStub()
     const svc = createWebdavService({ settings, cacheDir })

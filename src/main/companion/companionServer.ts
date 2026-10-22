@@ -6,9 +6,11 @@ import { COMPANION_CHANNELS } from '@shared/ipc/companionChannels'
 import type { SettingsService } from '../services/settingsService'
 import type { CompanionTokens } from './companionTokens'
 import { pickLanAddresses } from './lanAddress'
+import { AppError } from '../services/errors'
 
 const MAX_BODY_BYTES = 64 * 1024
 const MAX_PHOTO_BYTES = 20 * 1024 * 1024 // photo uploads go to Nextcloud, not the RPC pipeline
+const MAX_AVATAR_UPLOAD_BYTES = 3 * 1024 * 1024 // avatar route, matching the 2 MB decoded limit + base64 slack
 const AUTH_FAIL_LIMIT = 30 // failures per IP per minute → 429
 const AUTH_FAIL_WINDOW_MS = 60_000
 
@@ -36,6 +38,8 @@ export interface CompanionServerDeps {
   avatarBytes: (personId: string) => Buffer | null
   /** Uploads a screensaver photo to the configured WebDAV folder. */
   uploadPhoto: (fileName: string, bytes: Buffer) => Promise<void>
+  /** Runs the people:setAvatar pipeline on raw image bytes (large-body route). */
+  setAvatar: (personId: string, bytes: Buffer) => Promise<void>
 }
 
 /**
@@ -64,8 +68,18 @@ export function createCompanionServer(deps: CompanionServerDeps) {
     } else {
       entry.count += 1
     }
-    // keep the map from growing unboundedly on a hostile network
-    if (authFails.size > 1000) authFails.clear()
+    // keep the map from growing unboundedly on a hostile network — evict
+    // expired and oldest windows; never clear live counters wholesale
+    if (authFails.size > 1000) {
+      for (const [k, v] of authFails) {
+        if (now - v.windowStart > AUTH_FAIL_WINDOW_MS) authFails.delete(k)
+      }
+      while (authFails.size > 1000) {
+        const oldest = [...authFails.entries()].sort((a, b) => a[1].windowStart - b[1].windowStart)[0]
+        if (!oldest) break
+        authFails.delete(oldest[0])
+      }
+    }
   }
 
   function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -219,6 +233,44 @@ export function createCompanionServer(deps: CompanionServerDeps) {
       }
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' })
       res.end(bytes)
+      return
+    }
+    const avatarUploadMatch = url.split('?')[0].match(/^\/api\/avatar-upload\/?$/)
+    if (avatarUploadMatch) {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, error: { code: 'METHOD', message: 'POST only' } })
+        return
+      }
+      const ip = req.socket.remoteAddress ?? 'unknown'
+      if (rateLimited(ip)) {
+        sendJson(res, 429, { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many attempts — wait a minute' } })
+        return
+      }
+      const auth = req.headers.authorization ?? ''
+      if (!deps.tokens.verify(auth.startsWith('Bearer ') ? auth.slice(7) : '')) {
+        recordAuthFail(ip)
+        sendJson(res, 401, { ok: false, error: { code: 'UNAUTHORIZED', message: 'Not paired' } })
+        return
+      }
+      const personId = new URL(url, 'http://companion').searchParams.get('personId') ?? ''
+      if (!/^[A-Za-z0-9_-]+$/.test(personId)) {
+        sendJson(res, 400, { ok: false, error: { code: 'INVALID', message: 'Missing personId' } })
+        return
+      }
+      const body = await readBodyBytes(req, MAX_AVATAR_UPLOAD_BYTES)
+      if (body === null || body.length === 0) {
+        sendJson(res, 413, { ok: false, error: { code: 'TOO_LARGE', message: 'Avatar too large' } })
+        return
+      }
+      try {
+        deps.setAvatar(personId, body)
+        sendJson(res, 200, { ok: true, data: null })
+      } catch (err) {
+        sendJson(res, 200, {
+          ok: false,
+          error: { code: err instanceof AppError ? err.code : 'UPLOAD_FAILED', message: err instanceof Error ? err.message : 'Upload failed' }
+        })
+      }
       return
     }
     const photoMatch = url.split('?')[0].match(/^\/api\/photo$/)
