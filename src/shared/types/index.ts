@@ -171,7 +171,7 @@ export interface EventDeleteInput {
   occurrenceStart?: string
 }
 
-export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'lists'
+export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'habits' | 'lists'
 
 export type HomeTileType =
   | 'todayEvents'
@@ -293,6 +293,53 @@ export interface DayChoreDto {
 export interface StarBalanceDto {
   personId: string
   balance: number
+}
+
+export type HabitRoutine = 'morning' | 'evening' | null
+
+export interface HabitDto {
+  id: string
+  title: string
+  icon: string | null
+  personId: string
+  /** null = one-time habit on anchorDate */
+  recurrence: RecurrenceInput | null
+  /** YYYY-MM-DD; first day the habit applies (and the only day for one-offs) */
+  anchorDate: string
+  routine: HabitRoutine
+  active: boolean
+  sortOrder: number
+}
+
+export interface HabitCreateInput {
+  title: string
+  personId: string
+  recurrence?: RecurrenceInput | null
+  anchorDate?: string
+  routine?: HabitRoutine
+}
+
+export interface HabitUpdateInput {
+  id: string
+  title?: string
+  personId?: string
+  recurrence?: RecurrenceInput | null
+  anchorDate?: string
+  routine?: HabitRoutine
+  active?: boolean
+}
+
+export interface DayHabitDto {
+  habitId: string
+  title: string
+  icon: string | null
+  personId: string
+  routine: HabitRoutine
+  completed: boolean
+  /** consecutive due days completed, ending on the queried date */
+  streak: number
+  /** total completed due days (all time) */
+  totalDone: number
 }
 
 export interface RewardDto {

@@ -20,6 +20,7 @@ import type { SyncManager } from '../sync/scheduler'
 import type { WeatherService } from '../services/weatherService'
 import type { AuthService } from '../services/authService'
 import type { ChoresService } from '../services/choresService'
+import type { HabitsService } from '../services/habitsService'
 import type { RewardsService } from '../services/rewardsService'
 import type { ListsService } from '../services/listsService'
 import type { MealsService } from '../services/mealsService'
@@ -48,6 +49,7 @@ export interface Services {
   weather: WeatherService
   auth: AuthService
   chores: ChoresService
+  habits: HabitsService
   rewards: RewardsService
   lists: ListsService
   meals: MealsService
@@ -89,6 +91,9 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'chores:create',
   'chores:update',
   'chores:delete',
+  'habits:create',
+  'habits:update',
+  'habits:delete',
   'rewards:create',
   'rewards:update',
   'rewards:delete',
@@ -108,7 +113,7 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
 ])
 
 /** Channels that mutate data, mapped to the domain the renderer should refetch. */
-type MutationDomain = 'events' | 'people' | 'calendars' | 'settings' | 'lists' | 'meals' | 'chores'
+type MutationDomain = 'events' | 'people' | 'calendars' | 'settings' | 'lists' | 'meals' | 'chores' | 'habits'
 const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'settings:set': 'settings',
   'people:create': 'people',
@@ -140,7 +145,12 @@ const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'chores:update': 'chores',
   'chores:delete': 'chores',
   'chores:complete': 'chores',
-  'chores:uncomplete': 'chores'
+  'chores:uncomplete': 'chores',
+  'habits:create': 'habits',
+  'habits:update': 'habits',
+  'habits:delete': 'habits',
+  'habits:complete': 'habits',
+  'habits:uncomplete': 'habits'
 }
 
 export function broadcast(channel: string, payload: unknown): void {
@@ -313,6 +323,14 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('chores:getDay', s.choreDaySchema, (req) => services.chores.getDay(req.date))
   handle('chores:complete', s.choreCheckSchema, (req) => services.chores.complete(req.choreId, req.date))
   handle('chores:uncomplete', s.choreCheckSchema, (req) => services.chores.uncomplete(req.choreId, req.date))
+
+  handle('habits:list', null, () => services.habits.list())
+  handle('habits:create', s.habitCreateSchema, (req) => services.habits.create(req))
+  handle('habits:update', s.habitUpdateSchema, (req) => services.habits.update(req))
+  handle('habits:delete', s.idSchema, (req) => services.habits.remove(req.id))
+  handle('habits:getDay', s.habitDaySchema, (req) => services.habits.getDay(req.date))
+  handle('habits:complete', s.habitCheckSchema, (req) => services.habits.complete(req.habitId, req.date))
+  handle('habits:uncomplete', s.habitCheckSchema, (req) => services.habits.uncomplete(req.habitId, req.date))
 
   handle('stars:balances', null, () => services.chores.balances())
 

@@ -208,6 +208,31 @@ const MIGRATIONS: string[] = [
   ALTER TABLE calendars ADD COLUMN caldav_account_id TEXT REFERENCES caldav_accounts(id);
   ALTER TABLE calendars ADD COLUMN caldav_calendar_url TEXT;
   ALTER TABLE calendars ADD COLUMN person_id TEXT REFERENCES people(id);
+  `,
+  // 003 — habits and habit completions (habit tracker)
+  `
+  CREATE TABLE habits (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    icon TEXT,
+    person_id TEXT REFERENCES people(id),
+    schedule_rrule TEXT,
+    due_date TEXT,
+    routine TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+
+  CREATE TABLE habit_completions (
+    id TEXT PRIMARY KEY,
+    habit_id TEXT NOT NULL REFERENCES habits(id),
+    due_date TEXT NOT NULL,
+    completed_at TEXT NOT NULL,
+    UNIQUE (habit_id, due_date)
+  );
+  CREATE INDEX idx_habit_completions_habit_date ON habit_completions(habit_id, due_date);
   `
 ]
 

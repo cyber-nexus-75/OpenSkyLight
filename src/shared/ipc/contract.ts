@@ -13,6 +13,10 @@ import type {
   EventDeleteInput,
   EventDto,
   EventUpdateInput,
+  HabitCreateInput,
+  HabitDto,
+  HabitUpdateInput,
+  DayHabitDto,
   ListDto,
   ListItemDto,
   ListKind,
@@ -131,6 +135,14 @@ export type IpcContract = {
   'chores:getDay': { req: { date: string }; res: DayChoreDto[] }
   'chores:complete': { req: { choreId: string; date: string }; res: { balance: number } }
   'chores:uncomplete': { req: { choreId: string; date: string }; res: { balance: number } }
+
+  'habits:list': { req: void; res: HabitDto[] }
+  'habits:create': { req: HabitCreateInput; res: HabitDto }
+  'habits:update': { req: HabitUpdateInput; res: HabitDto }
+  'habits:delete': { req: { id: string }; res: void }
+  'habits:getDay': { req: { date: string }; res: DayHabitDto[] }
+  'habits:complete': { req: { habitId: string; date: string }; res: void }
+  'habits:uncomplete': { req: { habitId: string; date: string }; res: void }
 
   'stars:balances': { req: void; res: StarBalanceDto[] }
 
@@ -278,6 +290,7 @@ export const ALLOWED_CHANNEL_PREFIXES = [
   'weather:',
   'auth:',
   'chores:',
+  'habits:',
   'stars:',
   'rewards:',
   'lists:',

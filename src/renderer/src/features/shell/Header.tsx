@@ -20,7 +20,7 @@ function useNow(): DateTime {
 function periodLabel(view: CalendarViewKind, focusedDate: string, weekStartsOn: 0 | 1): string {
   const d = DateTime.fromISO(focusedDate, { zone: ZONE })
   if (view === 'home' || view === 'lists') return ''
-  if (view === 'day' || view === 'chores') return d.toFormat('LLL d')
+  if (view === 'day' || view === 'chores' || view === 'habits') return d.toFormat('LLL d')
   if (view === 'month') return d.toFormat('LLLL yyyy')
   if (view === 'agenda') return `From ${d.toFormat('LLL d')}`
   const target = weekStartsOn === 0 ? 7 : 1
@@ -129,6 +129,7 @@ export function Header() {
           { value: 'month', label: 'Month' },
           { value: 'agenda', label: 'Agenda' },
           { value: 'chores', label: 'Chores' },
+          { value: 'habits', label: 'Habits' },
           { value: 'lists', label: 'Lists' }
         ]}
       />

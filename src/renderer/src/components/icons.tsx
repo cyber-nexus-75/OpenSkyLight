@@ -154,3 +154,9 @@ export const LockIcon = (p: IconProps) => (
     <path d="M8 11V7a4 4 0 0 1 8 0v4" />
   </svg>
 )
+
+export const FlameIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M12 3c1 3-2 4.5-2 7a2 2 0 0 0 4 0c0-1-1-2 0-3 2 1.5 3 3.5 3 5.5A5 5 0 0 1 7 12.5C7 8.5 10 5 12 3Z" />
+  </svg>
+)

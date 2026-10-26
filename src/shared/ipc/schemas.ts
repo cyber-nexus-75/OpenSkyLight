@@ -146,7 +146,7 @@ export const settingsPatchSchema = z.object({
   patch: z
     .object({
       weekStartsOn: z.union([z.literal(0), z.literal(1)]).optional(),
-      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'lists']).optional(),
+      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'habits', 'lists']).optional(),
       homeLayout: z.array(homeTileSchema).max(24).optional(),
       timeFormat: z.enum(['12h', '24h']).optional(),
       temperatureUnit: z.enum(['f', 'c']).optional(),
@@ -248,6 +248,29 @@ export const choreUpdateSchema = z.object({
 
 export const choreDaySchema = z.object({ date: isoDate })
 export const choreCheckSchema = z.object({ choreId: id, date: isoDate })
+
+const habitRoutine = z.enum(['morning', 'evening']).nullable()
+
+export const habitCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  personId: id,
+  recurrence: recurrenceSchema.nullish(),
+  anchorDate: isoDate.optional(),
+  routine: habitRoutine.optional()
+})
+
+export const habitUpdateSchema = z.object({
+  id,
+  title: z.string().trim().min(1).max(120).optional(),
+  personId: id.optional(),
+  recurrence: recurrenceSchema.nullable().optional(),
+  anchorDate: isoDate.optional(),
+  routine: habitRoutine.optional(),
+  active: z.boolean().optional()
+})
+
+export const habitDaySchema = z.object({ date: isoDate })
+export const habitCheckSchema = z.object({ habitId: id, date: isoDate })
 
 export const rewardCreateSchema = z.object({
   title: z.string().trim().min(1).max(120),

@@ -284,6 +284,42 @@ export function useChoreMutations() {
   }
 }
 
+export function useHabits() {
+  return useQuery({ queryKey: ['habits'], queryFn: () => ipcInvoke('habits:list', undefined) })
+}
+
+export function useHabitsDay(date: string) {
+  return useQuery({
+    queryKey: ['habitsDay', date],
+    queryFn: () => ipcInvoke('habits:getDay', { date }),
+    placeholderData: (prev) => prev
+  })
+}
+
+export function useHabitMutations() {
+  const defKeys = [['habits'], ['habitsDay']]
+  const checkKeys = [['habitsDay']]
+  return {
+    create: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'habits:create'>>[1]) => ipcInvoke('habits:create', input),
+      defKeys
+    ),
+    update: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'habits:update'>>[1]) => ipcInvoke('habits:update', input),
+      defKeys
+    ),
+    remove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('habits:delete', input), defKeys),
+    complete: useInvalidatingMutation(
+      (input: { habitId: string; date: string }) => ipcInvoke('habits:complete', input),
+      checkKeys
+    ),
+    uncomplete: useInvalidatingMutation(
+      (input: { habitId: string; date: string }) => ipcInvoke('habits:uncomplete', input),
+      checkKeys
+    )
+  }
+}
+
 export function useRewards() {
   return useQuery({ queryKey: ['rewards'], queryFn: () => ipcInvoke('rewards:list', undefined) })
 }
@@ -419,6 +455,10 @@ export function usePushInvalidation(): void {
         // chore day views and star balances key off their own roots
         void queryClient.invalidateQueries({ queryKey: ['choresDay'] })
         void queryClient.invalidateQueries({ queryKey: ['balances'] })
+      }
+      if (domain === 'habits') {
+        // habit day views and streaks key off their own root
+        void queryClient.invalidateQueries({ queryKey: ['habitsDay'] })
       }
     })
     const offStatus = window.osl.on('push:syncStatus', () => {

@@ -21,6 +21,7 @@ import { createMainWindow } from './window'
 import { createWeatherService } from './services/weatherService'
 import { createAuthService } from './services/authService'
 import { createChoresService } from './services/choresService'
+import { createHabitsService } from './services/habitsService'
 import { createRewardsService } from './services/rewardsService'
 import { createListsService } from './services/listsService'
 import { createMealsService } from './services/mealsService'
@@ -134,6 +135,7 @@ if (!gotLock) {
       weather: createWeatherService(settings),
       auth: createAuthService(settings),
       chores: choresService,
+      habits: createHabitsService(db, deviceTz),
       rewards: createRewardsService(db, choresService),
       lists: createListsService(db),
       meals: createMealsService(db),

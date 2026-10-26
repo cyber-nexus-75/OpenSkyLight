@@ -45,7 +45,7 @@ export const useUi = create<UiState>((set, get) => ({
     if (view === 'home' || view === 'lists') return
     const d = DateTime.fromISO(focusedDate, { zone: ZONE })
     const next =
-      view === 'day' || view === 'chores'
+      view === 'day' || view === 'chores' || view === 'habits'
         ? d.plus({ days: direction })
         : view === 'month'
           ? d.plus({ months: direction })

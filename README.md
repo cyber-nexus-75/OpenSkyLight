@@ -1,6 +1,6 @@
 # OpenSkyLight
 
-An open-source, fully standalone family calendar display — a [Skylight Calendar](https://myskylight.com) alternative with no subscription, no cloud account, and no Home Assistant. One Electron app owns the whole touchscreen: calendar, family member color coding, Google sync, weather, chores, rewards, lists, meals, news, live cameras, and a photo screensaver.
+An open-source, fully standalone family calendar display — a [Skylight Calendar](https://myskylight.com) alternative with no subscription, no cloud account, and no Home Assistant. One Electron app owns the whole touchscreen: calendar, family member color coding, Google sync, weather, chores, rewards, habits, lists, meals, news, live cameras, and a photo screensaver.
 
 ## What it looks like
 
@@ -77,6 +77,10 @@ which seeds demo data through the app's real IPC layer — so they stay honest.
 - **Star rewards**: completed chores earn stars (append-only ledger, balance is
   always the sum); kids redeem rewards from the board, parents approve pending
   redemptions in settings
+- **Habit tracker**: per-person daily/weekly/one-time habits on a dedicated
+  Habits tab with big tap-to-check circles and flame streaks (off days are
+  skipped, not broken — weekly habits streak across their off days); parents
+  manage habit definitions behind the PIN (Settings → Habits)
 - **Custom lists** (groceries, to-dos, anything): color-coded cards with
   tap-to-check items, clear-done, shared by the whole family
 - **Phone companion app**: scan a QR code to pair, then edit lists, meals, and

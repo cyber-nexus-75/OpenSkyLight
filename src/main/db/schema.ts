@@ -140,6 +140,31 @@ export const choreCompletions = sqliteTable(
   (t) => [index('idx_completions_chore_date').on(t.choreId, t.dueDate)]
 )
 
+export const habits = sqliteTable('habits', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  icon: text('icon'),
+  personId: text('person_id').references(() => people.id),
+  scheduleRrule: text('schedule_rrule'),
+  dueDate: text('due_date'),
+  routine: text('routine', { enum: ['morning', 'evening'] }),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  deletedAt: text('deleted_at')
+})
+
+export const habitCompletions = sqliteTable(
+  'habit_completions',
+  {
+    id: text('id').primaryKey(),
+    habitId: text('habit_id').notNull().references(() => habits.id),
+    dueDate: text('due_date').notNull(),
+    completedAt: text('completed_at').notNull()
+  },
+  (t) => [index('idx_habit_completions_habit_date').on(t.habitId, t.dueDate)]
+)
+
 export const starLedger = sqliteTable('star_ledger', {
   id: text('id').primaryKey(),
   personId: text('person_id').notNull().references(() => people.id),

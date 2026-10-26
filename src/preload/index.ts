@@ -13,6 +13,7 @@ const ALLOWED_INVOKE_PREFIXES = [
   'weather:',
   'auth:',
   'chores:',
+  'habits:',
   'stars:',
   'rewards:',
   'lists:',

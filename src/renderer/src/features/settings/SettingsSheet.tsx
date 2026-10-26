@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AiEventDraft, CalendarDto, ChoreDto, PersonDto, PersonRole, RecurrenceInput, RewardDto } from '@shared/types'
+import type { AiEventDraft, CalendarDto, ChoreDto, HabitDto, PersonDto, PersonRole, RecurrenceInput, RewardDto } from '@shared/types'
 import { PERSON_COLORS } from '@shared/types'
 import { describeRecurrence } from '@shared/recurrence/build'
 import {
@@ -12,6 +12,8 @@ import {
   useCompanionStatus,
   useChoreMutations,
   useChores,
+  useHabits,
+  useHabitMutations,
   useAvatarMutations,
   useCaldavMutations,
   useCaldavRemoteCalendars,
@@ -44,7 +46,7 @@ import { Avatar } from '../../components/Avatar'
 import { textOn } from '../../lib/format'
 import QRCode from 'qrcode'
 
-type Tab = 'family' | 'calendars' | 'chores' | 'general'
+type Tab = 'family' | 'calendars' | 'chores' | 'habits' | 'general'
 
 export function SettingsSheet() {
   const open = useUi((s) => s.settingsOpen)
@@ -96,6 +98,7 @@ export function SettingsSheet() {
             { value: 'family', label: 'Family' },
             { value: 'calendars', label: 'Calendars' },
             { value: 'chores', label: 'Chores' },
+            { value: 'habits', label: 'Habits' },
             { value: 'general', label: 'General' }
           ]}
         />
@@ -103,6 +106,7 @@ export function SettingsSheet() {
       {tab === 'family' && <FamilyTab />}
       {tab === 'calendars' && <CalendarsTab />}
       {tab === 'chores' && <ChoresTab />}
+      {tab === 'habits' && <HabitsTab />}
       {tab === 'general' && <GeneralTab />}
     </Sheet>
   )
@@ -695,6 +699,191 @@ type ScheduleKind = 'daily' | 'weekly' | 'once'
 function scheduleOf(recurrence: RecurrenceInput | null): ScheduleKind {
   if (!recurrence) return 'once'
   return recurrence.freq === 'weekly' ? 'weekly' : 'daily'
+}
+
+function HabitsTab() {
+  const { data: people = [] } = usePeople()
+  const { data: habits = [] } = useHabits()
+  const habitMutations = useHabitMutations()
+  const peopleById = new Map(people.map((p) => [p.id, p]))
+
+  const [editingHabit, setEditingHabit] = useState<HabitDto | 'new' | null>(null)
+  const [habitTitle, setHabitTitle] = useState('')
+  const [habitPerson, setHabitPerson] = useState<string | null>(null)
+  const [schedule, setSchedule] = useState<ScheduleKind>('daily')
+  const [weekdays, setWeekdays] = useState<number[]>([])
+  const [routine, setRoutine] = useState<'any' | 'morning' | 'evening'>('any')
+
+  const openHabitEditor = (h: HabitDto | 'new'): void => {
+    setEditingHabit(h)
+    if (h === 'new') {
+      setHabitTitle('')
+      setHabitPerson(people[0]?.id ?? null)
+      setSchedule('daily')
+      setWeekdays([])
+      setRoutine('any')
+    } else {
+      setHabitTitle(h.title)
+      setHabitPerson(h.personId)
+      setSchedule(scheduleOf(h.recurrence))
+      setWeekdays(h.recurrence?.byWeekdays ?? [])
+      setRoutine(h.routine ?? 'any')
+    }
+  }
+
+  const saveHabit = (): void => {
+    if (!habitTitle.trim() || !habitPerson) return
+    const recurrence: RecurrenceInput | null =
+      schedule === 'once'
+        ? null
+        : schedule === 'daily'
+          ? { freq: 'daily' }
+          : { freq: 'weekly', byWeekdays: weekdays.length > 0 ? weekdays : [0] }
+    const common = {
+      title: habitTitle.trim(),
+      personId: habitPerson,
+      recurrence,
+      routine: routine === 'any' ? null : routine
+    }
+    if (editingHabit === 'new') habitMutations.create.mutate(common)
+    else if (editingHabit) habitMutations.update.mutate({ id: editingHabit.id, ...common })
+    setEditingHabit(null)
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <FieldLabel>Habits</FieldLabel>
+        <div className="flex flex-col gap-2">
+          {habits.map((h) => {
+            const person = peopleById.get(h.personId)
+            return (
+              <button
+                key={h.id}
+                type="button"
+                onClick={() => openHabitEditor(h)}
+                className="pressable flex items-center gap-3 rounded-2xl bg-paper-deep/50 p-3 text-left"
+              >
+                <span className="h-6 w-6 shrink-0 rounded-full" style={{ backgroundColor: person?.color ?? '#999' }} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-lg font-bold">{h.title}</span>
+                  <span className="block text-sm font-bold text-ink-faint">
+                    {person?.name ?? '—'} · {h.recurrence ? describeRecurrence(h.recurrence) : 'One time'}
+                    {h.routine ? ` · ${h.routine}` : ''}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+          <BigButton variant="ghost" onClick={() => openHabitEditor('new')} disabled={people.length === 0}>
+            <span className="flex items-center justify-center gap-2">
+              <PlusIcon size={20} /> Add habit
+            </span>
+          </BigButton>
+          {people.length === 0 && (
+            <p className="text-sm font-semibold text-ink-faint">Add family members first — habits belong to a person.</p>
+          )}
+        </div>
+      </div>
+
+      <Dialog
+        open={editingHabit !== null}
+        onClose={() => setEditingHabit(null)}
+        title={editingHabit === 'new' ? 'Add habit' : 'Edit habit'}
+      >
+        <div className="flex flex-col gap-4">
+          <div>
+            <FieldLabel>Habit</FieldLabel>
+            <OskInput value={habitTitle} onChange={setHabitTitle} placeholder="e.g. Read 20 minutes" autoFocus={editingHabit === 'new'} />
+          </div>
+          <div>
+            <FieldLabel>Who</FieldLabel>
+            <div className="flex flex-wrap gap-2">
+              {people.map((p) => {
+                const on = habitPerson === p.id
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setHabitPerson(p.id)}
+                    className={`pressable rounded-full border-2 px-4 py-2 text-base font-bold ${
+                      on ? 'border-transparent' : 'border-line bg-card text-ink-soft'
+                    }`}
+                    style={on ? { backgroundColor: p.color, color: textOn(p.color) } : undefined}
+                  >
+                    {p.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div>
+            <FieldLabel>Routine</FieldLabel>
+            <SegmentedControl
+              value={routine}
+              onChange={setRoutine}
+              options={[
+                { value: 'any', label: 'Anytime' },
+                { value: 'morning', label: 'Morning' },
+                { value: 'evening', label: 'Evening' }
+              ]}
+            />
+          </div>
+          <div>
+            <FieldLabel>Repeats</FieldLabel>
+            <SegmentedControl
+              value={schedule}
+              onChange={setSchedule}
+              options={[
+                { value: 'daily', label: 'Every day' },
+                { value: 'weekly', label: 'Weekly' },
+                { value: 'once', label: 'One time' }
+              ]}
+            />
+            {schedule === 'weekly' && (
+              <div className="mt-3 flex gap-2">
+                {WEEKDAY_SHORT.map((label, i) => {
+                  const on = weekdays.includes(i)
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setWeekdays(on ? weekdays.filter((d) => d !== i) : [...weekdays, i])}
+                      className={`pressable flex h-11 w-11 items-center justify-center rounded-full text-base font-extrabold ${
+                        on ? 'bg-ember text-white' : 'bg-paper-deep text-ink-soft'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          <div className="mt-1 flex gap-3">
+            {editingHabit !== 'new' && editingHabit && (
+              <BigButton
+                variant="danger"
+                onClick={() => {
+                  habitMutations.remove.mutate({ id: editingHabit.id })
+                  setEditingHabit(null)
+                }}
+              >
+                Delete
+              </BigButton>
+            )}
+            <div className="flex-1" />
+            <BigButton variant="ghost" onClick={() => setEditingHabit(null)}>
+              Cancel
+            </BigButton>
+            <BigButton onClick={saveHabit} disabled={!habitTitle.trim() || !habitPerson}>
+              Save
+            </BigButton>
+          </div>
+        </div>
+      </Dialog>
+    </div>
+  )
 }
 
 function ChoresTab() {
