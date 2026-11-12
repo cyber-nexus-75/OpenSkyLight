@@ -26,6 +26,10 @@ export function createMainWindow(): BrowserWindow {
   win.once('ready-to-show', () => win.show())
   // Pinch-zoom on a touchscreen must not scale the kiosk UI
   win.webContents.setVisualZoomLevelLimits(1, 1)
+  // The groceries view uses the camera for receipt photos — allow 'media' only
+  win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media')
+  })
   // Any external link goes to the system browser, never inside the kiosk
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)

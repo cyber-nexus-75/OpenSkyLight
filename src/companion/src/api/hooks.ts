@@ -141,3 +141,40 @@ export function useAiImport() {
 export function useAvatarMutation() {
   return useInvalidatingMutation((input: AvatarSetInput) => rpc('people:setAvatar', input), [['people']])
 }
+
+export function useGroceries() {
+  return useQuery({ queryKey: ['groceries'], queryFn: () => rpc('groceries:getState', undefined), ...LIVE })
+}
+
+export function useReceipts() {
+  return useQuery({ queryKey: ['groceries', 'receipts'], queryFn: () => rpc('groceries:listReceipts', undefined), ...LIVE })
+}
+
+export function useGroceriesMutations() {
+  const keys = [['groceries']]
+  return {
+    pantryAdd: useInvalidatingMutation((input: Parameters<typeof rpc<'pantry:add'>>[1]) => rpc('pantry:add', input), keys),
+    pantryUpdate: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'pantry:update'>>[1]) => rpc('pantry:update', input),
+      keys
+    ),
+    pantryAdjust: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'pantry:adjust'>>[1]) => rpc('pantry:adjust', input),
+      keys
+    ),
+    pantryRemove: useInvalidatingMutation((input: { id: string }) => rpc('pantry:remove', input), keys),
+    shoppingAdd: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'shopping:add'>>[1]) => rpc('shopping:add', input),
+      keys
+    ),
+    shoppingToggle: useInvalidatingMutation((input: { id: string }) => rpc('shopping:toggle', input), keys),
+    shoppingRemove: useInvalidatingMutation((input: { id: string }) => rpc('shopping:remove', input), keys),
+    shoppingClear: useInvalidatingMutation(() => rpc('shopping:clearChecked', undefined), keys),
+    addLowStock: useInvalidatingMutation(() => rpc('shopping:addLowStock', undefined), keys),
+    applyReceipt: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'groceries:applyReceipt'>>[1]) => rpc('groceries:applyReceipt', input),
+      keys
+    ),
+    receiptDetail: useMutation({ mutationFn: (scanId: string) => rpc('groceries:receiptDetail', { scanId }) })
+  }
+}

@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 import type { IpcChannel, IpcResult } from '@shared/ipc/contract'
 import { COMPANION_CHANNELS } from '@shared/ipc/companionChannels'
+import type { ReceiptScanResultDto } from '@shared/types'
 import type { SettingsService } from '../services/settingsService'
 import type { CompanionTokens } from './companionTokens'
 import { pickLanAddresses } from './lanAddress'
@@ -36,6 +37,8 @@ export interface CompanionServerDeps {
   avatarBytes: (personId: string) => Buffer | null
   /** Uploads a screensaver photo to the configured WebDAV folder. */
   uploadPhoto: (fileName: string, bytes: Buffer) => Promise<void>
+  /** OCRs a receipt photo upload and records the scan (no pantry changes yet). */
+  scanReceipt: (bytes: Buffer) => Promise<ReceiptScanResultDto>
 }
 
 /**
@@ -255,6 +258,39 @@ export function createCompanionServer(deps: CompanionServerDeps) {
         sendJson(res, 200, {
           ok: false,
           error: { code: 'UPLOAD_FAILED', message: err instanceof Error ? err.message : 'Upload failed' }
+        })
+      }
+      return
+    }
+    const receiptMatch = url.split('?')[0].match(/^\/api\/receipt$/)
+    if (receiptMatch) {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, error: { code: 'METHOD', message: 'POST only' } })
+        return
+      }
+      const ip = req.socket.remoteAddress ?? 'unknown'
+      if (rateLimited(ip)) {
+        sendJson(res, 429, { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many attempts — wait a minute' } })
+        return
+      }
+      const auth = req.headers.authorization ?? ''
+      if (!deps.tokens.verify(auth.startsWith('Bearer ') ? auth.slice(7) : '')) {
+        recordAuthFail(ip)
+        sendJson(res, 401, { ok: false, error: { code: 'UNAUTHORIZED', message: 'Not paired — scan the QR code on the kiosk' } })
+        return
+      }
+      const body = await readBodyBytes(req, MAX_PHOTO_BYTES)
+      if (body === null || body.length === 0) {
+        sendJson(res, 413, { ok: false, error: { code: 'TOO_LARGE', message: 'Receipt image too large' } })
+        return
+      }
+      try {
+        const result = await deps.scanReceipt(body)
+        sendJson(res, 200, { ok: true, data: result })
+      } catch (err) {
+        sendJson(res, 200, {
+          ok: false,
+          error: { code: 'SCAN_FAILED', message: err instanceof Error ? err.message : 'Scan failed' }
         })
       }
       return

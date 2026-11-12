@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, blob, index, primaryKey } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, blob, index, primaryKey } from 'drizzle-orm/sqlite-core'
 
 /** All timestamps are UTC ISO-8601 strings; calendar dates are YYYY-MM-DD; booleans are 0/1 ints. */
 
@@ -214,4 +214,55 @@ export const mealSlots = sqliteTable(
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull() // JSON
+})
+
+/** Pantry inventory: what we have and how much (quantity is in `unit`). */
+export const pantryItems = sqliteTable(
+  'pantry_items',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    /** normalized lookup key so "Milk" and "MILK 2%" can be merged onto one row */
+    nameKey: text('name_key').notNull(),
+    category: text('category'),
+    unit: text('unit'),
+    quantity: real('quantity').notNull().default(0),
+    minQuantity: real('min_quantity').notNull().default(0),
+    source: text('source', { enum: ['manual', 'receipt', 'voice'] }).notNull().default('manual'),
+    updatedAt: text('updated_at').notNull(),
+    createdAt: text('created_at').notNull(),
+    deletedAt: text('deleted_at')
+  },
+  (t) => [index('idx_pantry_name_key').on(t.nameKey)]
+)
+
+/** The weekly shopping order (what we need to buy). */
+export const shoppingItems = sqliteTable(
+  'shopping_items',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    nameKey: text('name_key').notNull(),
+    quantity: real('quantity').notNull().default(1),
+    unit: text('unit'),
+    note: text('note'),
+    checked: integer('checked', { mode: 'boolean' }).notNull().default(false),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: text('created_at').notNull()
+  },
+  (t) => [index('idx_shopping_name_key').on(t.nameKey)]
+)
+
+/** Receipt photo scans: image on disk + OCR text + parsed summary. */
+export const receiptScans = sqliteTable('receipt_scans', {
+  id: text('id').primaryKey(),
+  imagePath: text('image_path').notNull(),
+  store: text('store'),
+  total: real('total'),
+  rawText: text('raw_text'),
+  itemCount: integer('item_count').notNull().default(0),
+  /** set once the user confirms the parsed items into the pantry */
+  appliedAt: text('applied_at'),
+  scannedAt: text('scanned_at').notNull(),
+  createdAt: text('created_at').notNull()
 })

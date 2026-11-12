@@ -1,11 +1,13 @@
-import { app, ipcMain, BrowserWindow } from 'electron'
+import { app, clipboard, ipcMain, shell, BrowserWindow } from 'electron'
 import { DateTime } from 'luxon'
 import type { ZodType } from 'zod'
 import { ZodError } from 'zod'
 import type { IpcChannel, IpcContract, IpcResult } from '@shared/ipc/contract'
 import * as s from '@shared/ipc/schemas'
+import { frysCsv, frysSearchUrl, frysTextList, type FrysLine } from '@shared/groceries/frys'
 import { AppError, notFound } from '../services/errors'
 import { decodeBase64Image } from '../services/avatarService'
+import { decodeReceiptImage } from '../services/receiptService'
 import type { SettingsService } from '../services/settingsService'
 import type { PeopleService } from '../services/peopleService'
 import type { AvatarService } from '../services/avatarService'
@@ -32,6 +34,8 @@ import type { WebdavService } from '../services/webdavService'
 import type { AiService } from '../services/aiService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
+import type { GroceriesService } from '../services/groceriesService'
+import type { ReceiptService } from '../services/receiptService'
 
 export interface Services {
   settings: SettingsService
@@ -60,6 +64,8 @@ export interface Services {
   ai: AiService
   birdnet: BirdNetService
   companion: CompanionServer
+  groceries: GroceriesService
+  receipts: ReceiptService
 }
 
 /**
@@ -108,7 +114,7 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
 ])
 
 /** Channels that mutate data, mapped to the domain the renderer should refetch. */
-type MutationDomain = 'events' | 'people' | 'calendars' | 'settings' | 'lists' | 'meals' | 'chores'
+type MutationDomain = 'events' | 'people' | 'calendars' | 'settings' | 'lists' | 'meals' | 'chores' | 'groceries'
 const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'settings:set': 'settings',
   'people:create': 'people',
@@ -140,7 +146,19 @@ const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'chores:update': 'chores',
   'chores:delete': 'chores',
   'chores:complete': 'chores',
-  'chores:uncomplete': 'chores'
+  'chores:uncomplete': 'chores',
+  'pantry:add': 'groceries',
+  'pantry:update': 'groceries',
+  'pantry:adjust': 'groceries',
+  'pantry:remove': 'groceries',
+  'shopping:add': 'groceries',
+  'shopping:update': 'groceries',
+  'shopping:toggle': 'groceries',
+  'shopping:remove': 'groceries',
+  'shopping:clearChecked': 'groceries',
+  'shopping:addLowStock': 'groceries',
+  'groceries:scanReceipt': 'groceries',
+  'groceries:applyReceipt': 'groceries'
 }
 
 export function broadcast(channel: string, payload: unknown): void {
@@ -335,6 +353,44 @@ export function buildChannelTable(services: Services): ChannelTable {
 
   handle('meals:getRange', s.mealsRangeSchema, (req) => services.meals.getRange(req.start, req.end))
   handle('meals:set', s.mealSetSchema, (req) => services.meals.set(req.date, req.slot, req.text))
+
+  handle('groceries:getState', null, () => services.groceries.getState())
+  handle('pantry:add', s.pantryAddSchema, (req) =>
+    services.groceries.pantryAdd({ ...req, source: 'manual' })
+  )
+  handle('pantry:update', s.pantryUpdateSchema, (req) => services.groceries.pantryUpdate(req))
+  handle('pantry:adjust', s.pantryAdjustSchema, (req) => services.groceries.pantryAdjust(req.id, req.delta))
+  handle('pantry:remove', s.idSchema, (req) => services.groceries.pantryRemove(req.id))
+  handle('shopping:add', s.shoppingAddSchema, (req) => services.groceries.shoppingAdd(req))
+  handle('shopping:update', s.shoppingUpdateSchema, (req) => services.groceries.shoppingUpdate(req))
+  handle('shopping:toggle', s.idSchema, (req) => services.groceries.shoppingToggle(req.id))
+  handle('shopping:remove', s.idSchema, (req) => services.groceries.shoppingRemove(req.id))
+  handle('shopping:clearChecked', null, () => services.groceries.shoppingClearChecked())
+  handle('shopping:addLowStock', null, () => services.groceries.shoppingAddLowStock())
+  handle('groceries:scanReceipt', s.scanReceiptSchema, async (req) => {
+    const bytes = decodeReceiptImage(req.data)
+    return services.receipts.scan(bytes)
+  })
+  handle('groceries:applyReceipt', s.applyReceiptSchema, (req) => services.groceries.applyReceipt(req.scanId, req.items))
+  handle('groceries:listReceipts', null, () => services.groceries.listReceipts())
+  handle('groceries:receiptDetail', s.scanIdSchema, (req) => services.receipts.getScanDetail(req.scanId))
+  handle('groceries:receiptImage', s.scanIdSchema, (req) => ({ dataUrl: services.receipts.getImageDataUrl(req.scanId) }))
+  handle('groceries:openFrys', s.openFrysSchema, (req) => {
+    const base = services.settings.getAll().groceries.storeBaseUrl
+    const url = req.query ? frysSearchUrl(base, req.query) : frysSearchUrl(base, '')
+    void shell.openExternal(url)
+    return { url }
+  })
+  handle('groceries:copyList', s.copyListSchema, (req) => {
+    const base = services.settings.getAll().groceries.storeBaseUrl
+    const lines: FrysLine[] = services.groceries
+      .getState()
+      .shopping.filter((i) => !i.checked)
+      .map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit }))
+    const text = req.format === 'csv' ? frysCsv(base, lines) : frysTextList(lines)
+    clipboard.writeText(text)
+    return { text }
+  })
 
   handle('rss:getFeed', s.rssFeedSchema, (req) => services.rss.getFeed(req.feedId))
 

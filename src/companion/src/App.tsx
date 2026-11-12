@@ -5,15 +5,17 @@ import { ListsPage } from './pages/ListsPage'
 import { MealsPage } from './pages/MealsPage'
 import { ChoresPage } from './pages/ChoresPage'
 import { CalendarPage } from './pages/CalendarPage'
+import { GroceriesPage } from './pages/GroceriesPage'
 import { PairScreen } from './pages/PairScreen'
 
-type TabId = 'lists' | 'meals' | 'chores' | 'calendar'
+type TabId = 'lists' | 'meals' | 'chores' | 'calendar' | 'groceries'
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: 'lists', label: 'Lists', icon: '✓' },
   { id: 'meals', label: 'Meals', icon: '🍽' },
   { id: 'chores', label: 'Chores', icon: '★' },
-  { id: 'calendar', label: 'Calendar', icon: '\u25a4' }
+  { id: 'calendar', label: 'Calendar', icon: '\u25a4' },
+  { id: 'groceries', label: 'Groceries', icon: '\U0001F6D2' }
 ]
 
 export default function App() {
@@ -40,6 +42,7 @@ export default function App() {
           {tab === 'meals' && <MealsPage />}
           {tab === 'chores' && <ChoresPage />}
           {tab === 'calendar' && <CalendarPage />}
+          {tab === 'groceries' && <GroceriesPage />}
         </div>
       </main>
 

@@ -344,6 +344,59 @@ export function useListMutations() {
   }
 }
 
+export function useGroceries() {
+  return useQuery({ queryKey: ['groceries'], queryFn: () => ipcInvoke('groceries:getState', undefined) })
+}
+
+export function useReceipts() {
+  return useQuery({
+    queryKey: ['groceries', 'receipts'],
+    queryFn: () => ipcInvoke('groceries:listReceipts', undefined)
+  })
+}
+
+export function useGroceriesMutations() {
+  const keys = [['groceries']]
+  return {
+    pantryAdd: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'pantry:add'>>[1]) => ipcInvoke('pantry:add', input),
+      keys
+    ),
+    pantryUpdate: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'pantry:update'>>[1]) => ipcInvoke('pantry:update', input),
+      keys
+    ),
+    pantryAdjust: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'pantry:adjust'>>[1]) => ipcInvoke('pantry:adjust', input),
+      keys
+    ),
+    pantryRemove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('pantry:remove', input), keys),
+    shoppingAdd: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'shopping:add'>>[1]) => ipcInvoke('shopping:add', input),
+      keys
+    ),
+    shoppingUpdate: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'shopping:update'>>[1]) => ipcInvoke('shopping:update', input),
+      keys
+    ),
+    shoppingToggle: useInvalidatingMutation((input: { id: string }) => ipcInvoke('shopping:toggle', input), keys),
+    shoppingRemove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('shopping:remove', input), keys),
+    shoppingClear: useInvalidatingMutation(() => ipcInvoke('shopping:clearChecked', undefined), keys),
+    addLowStock: useInvalidatingMutation(() => ipcInvoke('shopping:addLowStock', undefined), keys),
+    applyReceipt: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'groceries:applyReceipt'>>[1]) => ipcInvoke('groceries:applyReceipt', input),
+      keys
+    ),
+    scanReceipt: useInvalidatingMutation(
+      (data: string) => ipcInvoke('groceries:scanReceipt', { data }),
+      keys
+    ),
+    openFrys: useMutation({ mutationFn: (query?: string) => ipcInvoke('groceries:openFrys', { query }) }),
+    copyList: useMutation({ mutationFn: (format: 'text' | 'csv') => ipcInvoke('groceries:copyList', { format }) }),
+    receiptDetail: useMutation({ mutationFn: (scanId: string) => ipcInvoke('groceries:receiptDetail', { scanId }) })
+  }
+}
+
 export function useMeals(start: string, end: string) {
   return useQuery({
     queryKey: ['meals', start, end],

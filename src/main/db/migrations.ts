@@ -208,6 +208,48 @@ const MIGRATIONS: string[] = [
   ALTER TABLE calendars ADD COLUMN caldav_account_id TEXT REFERENCES caldav_accounts(id);
   ALTER TABLE calendars ADD COLUMN caldav_calendar_url TEXT;
   ALTER TABLE calendars ADD COLUMN person_id TEXT REFERENCES people(id);
+  `,
+  // 003 — groceries: pantry inventory, weekly shopping list, receipt scans
+  `
+  CREATE TABLE pantry_items (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_key TEXT NOT NULL,
+    category TEXT,
+    unit TEXT,
+    quantity REAL NOT NULL DEFAULT 0,
+    min_quantity REAL NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'manual',
+    updated_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+  CREATE INDEX idx_pantry_name_key ON pantry_items(name_key);
+
+  CREATE TABLE shopping_items (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_key TEXT NOT NULL,
+    quantity REAL NOT NULL DEFAULT 1,
+    unit TEXT,
+    note TEXT,
+    checked INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_shopping_name_key ON shopping_items(name_key);
+
+  CREATE TABLE receipt_scans (
+    id TEXT PRIMARY KEY,
+    image_path TEXT NOT NULL,
+    store TEXT,
+    total REAL,
+    raw_text TEXT,
+    item_count INTEGER NOT NULL DEFAULT 0,
+    applied_at TEXT,
+    scanned_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
   `
 ]
 

@@ -1,4 +1,5 @@
 import type { IpcChannel, IpcContract, IpcResult } from '@shared/ipc/contract'
+import type { ReceiptScanResultDto } from '@shared/types'
 
 const TOKEN_KEY = 'osl.companionToken'
 
@@ -75,4 +76,23 @@ export async function uploadPhoto(fileName: string, bytes: Uint8Array): Promise<
   }
   const json = (await res.json()) as IpcResult<null>
   if (!json.ok) throw new RpcError(json.error.code, json.error.message)
+}
+
+/** Upload a receipt photo for on-device OCR on the kiosk; returns the parsed scan. */
+export async function uploadReceipt(bytes: Uint8Array): Promise<ReceiptScanResultDto> {
+  const res = await fetch('/api/receipt', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getToken() ?? ''}`,
+      'Content-Type': 'application/octet-stream'
+    },
+    body: bytes as unknown as BodyInit
+  })
+  if (res.status === 401) {
+    onUnauthorized()
+    throw new RpcError('UNAUTHORIZED', 'Not paired')
+  }
+  const json = (await res.json()) as IpcResult<ReceiptScanResultDto>
+  if (!json.ok) throw new RpcError(json.error.code, json.error.message)
+  return json.data
 }

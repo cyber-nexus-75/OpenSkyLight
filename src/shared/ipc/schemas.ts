@@ -146,7 +146,7 @@ export const settingsPatchSchema = z.object({
   patch: z
     .object({
       weekStartsOn: z.union([z.literal(0), z.literal(1)]).optional(),
-      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'lists']).optional(),
+      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'lists', 'groceries']).optional(),
       homeLayout: z.array(homeTileSchema).max(24).optional(),
       timeFormat: z.enum(['12h', '24h']).optional(),
       temperatureUnit: z.enum(['f', 'c']).optional(),
@@ -156,7 +156,8 @@ export const settingsPatchSchema = z.object({
       screensaver: z.object({ folder: z.string().nullable(), idleMinutes: z.number().int().min(1).max(120) }).optional(),
       launchOnStartup: z.boolean().optional(),
       companion: z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65535) }).optional(),
-      syncIntervalMinutes: z.number().int().min(5).max(1440).optional()
+      syncIntervalMinutes: z.number().int().min(5).max(1440).optional(),
+      groceries: z.object({ storeBaseUrl: z.string().trim().max(500) }).optional()
     })
     .strict()
 })
@@ -285,6 +286,61 @@ export const mealSetSchema = z.object({
   slot: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
   text: z.string().trim().max(200).nullable()
 })
+
+const unitSchema = z.string().trim().min(1).max(24).nullable()
+
+export const pantryAddSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  quantity: z.number().min(0).max(100000).optional(),
+  unit: unitSchema.optional(),
+  minQuantity: z.number().min(0).max(100000).optional(),
+  category: z.string().trim().min(1).max(60).nullable().optional()
+})
+
+export const pantryUpdateSchema = z.object({
+  id,
+  name: z.string().trim().min(1).max(120).optional(),
+  quantity: z.number().min(0).max(100000).optional(),
+  unit: unitSchema.optional(),
+  minQuantity: z.number().min(0).max(100000).optional(),
+  category: z.string().trim().min(1).max(60).nullable().optional()
+})
+
+export const pantryAdjustSchema = z.object({ id, delta: z.number().min(-100000).max(100000) })
+
+export const shoppingAddSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  quantity: z.number().min(0.5).max(100000).optional(),
+  unit: unitSchema.optional(),
+  note: z.string().trim().max(300).nullable().optional()
+})
+
+export const shoppingUpdateSchema = z.object({
+  id,
+  name: z.string().trim().min(1).max(120).optional(),
+  quantity: z.number().min(0.5).max(100000).optional(),
+  note: z.string().trim().max(300).nullable().optional()
+})
+
+export const scanReceiptSchema = z.object({ data: z.string().min(1).max(20_000_000) })
+
+export const applyReceiptSchema = z.object({
+  scanId: id,
+  items: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(120),
+        quantity: z.number().min(0).max(100000),
+        unit: unitSchema.optional()
+      })
+    )
+    .max(300)
+})
+
+export const scanIdSchema = z.object({ scanId: id })
+
+export const openFrysSchema = z.object({ query: z.string().trim().max(200).optional() })
+export const copyListSchema = z.object({ format: z.enum(['text', 'csv']) })
 
 export const citySearchSchema = z.object({ query: z.string().trim().min(2).max(80) })
 

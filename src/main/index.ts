@@ -39,6 +39,8 @@ import { createCalDavSync } from './sync/caldavSync'
 import { createOutboxWorker } from './sync/outboxWorker'
 import { createIcsSync } from './sync/icsSync'
 import { createSyncManager } from './sync/scheduler'
+import { createGroceriesService } from './services/groceriesService'
+import { createReceiptService } from './services/receiptService'
 
 // Test harnesses point this at a temp dir so smoke runs never touch real data
 if (process.env.OSL_USER_DATA) {
@@ -105,6 +107,9 @@ if (!gotLock) {
       broadcast
     })
 
+    const groceriesService = createGroceriesService(db)
+    const receiptService = createReceiptService({ rootDir: app.getPath('userData'), db })
+
     // companion dispatches through the same channel table built below; the
     // closure resolves after boot, before any HTTP request can arrive
     let channelTable: ChannelTable
@@ -115,7 +120,8 @@ if (!gotLock) {
       version: app.getVersion(),
       staticRoot: join(__dirname, '../companion'),
       avatarBytes: (personId) => avatars.get(personId),
-      uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes)
+      uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes),
+      scanReceipt: (bytes) => receiptService.scan(bytes)
     })
     app.on('will-quit', () => companion.shutdown())
 
@@ -145,7 +151,9 @@ if (!gotLock) {
       webdav: webdavService,
       ai: aiService,
       birdnet: createBirdNetService(),
-      companion
+      companion,
+      groceries: groceriesService,
+      receipts: receiptService
     }
     channelTable = buildChannelTable(services)
     registerIpcHandlers(services, channelTable)
