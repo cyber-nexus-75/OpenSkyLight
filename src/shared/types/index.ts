@@ -171,7 +171,7 @@ export interface EventDeleteInput {
   occurrenceStart?: string
 }
 
-export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'lists'
+export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'lists' | 'groceries'
 
 export type HomeTileType =
   | 'todayEvents'
@@ -313,6 +313,53 @@ export interface RedemptionDto {
   status: 'pending' | 'granted'
 }
 
+export type PantrySource = 'manual' | 'receipt' | 'voice'
+
+export interface PantryItemDto {
+  id: string
+  name: string
+  category: string | null
+  unit: string | null
+  quantity: number
+  minQuantity: number
+  source: PantrySource
+  updatedAt: string
+  createdAt: string
+}
+
+export interface ShoppingItemDto {
+  id: string
+  name: string
+  quantity: number
+  unit: string | null
+  note: string | null
+  checked: boolean
+  sortOrder: number
+  createdAt: string
+}
+
+export interface ReceiptScanDto {
+  id: string
+  store: string | null
+  total: number | null
+  itemCount: number
+  applied: boolean
+  scannedAt: string
+}
+
+/** One scan's OCR result, returned right after scanning for review before applying. */
+export interface ReceiptScanResultDto {
+  scan: ReceiptScanDto
+  rawText: string
+  parsed: { store: string | null; total: number | null; items: ParsedReceiptItem[] }
+}
+
+export interface GroceriesStateDto {
+  pantry: PantryItemDto[]
+  shopping: ShoppingItemDto[]
+  lowStock: PantryItemDto[]
+}
+
 export interface AppSettings {
   /** 0 = Sunday, 1 = Monday */
   weekStartsOn: 0 | 1
@@ -330,9 +377,13 @@ export interface AppSettings {
   companion: { enabled: boolean; port: number }
   /** background sync cadence for calendar providers, in minutes */
   syncIntervalMinutes: number
+  /** grocery store used for order handoff links (Fry's/Kroger by default) */
+  groceries: { storeBaseUrl: string }
 }
 
 import { DEFAULT_HOME_LAYOUT } from '../home'
+import { DEFAULT_STORE_BASE_URL } from '../groceries/frys'
+import type { ParsedReceiptItem } from '../groceries/receiptParse'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   weekStartsOn: 0,
@@ -346,7 +397,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchOnStartup: false,
   homeLayout: DEFAULT_HOME_LAYOUT,
   companion: { enabled: false, port: 8420 },
-  syncIntervalMinutes: 15
+  syncIntervalMinutes: 15,
+  groceries: { storeBaseUrl: DEFAULT_STORE_BASE_URL }
 }
 
 /** Touch-friendly person color palette (Skylight-style) */

@@ -13,19 +13,25 @@ import type {
   EventDeleteInput,
   EventDto,
   EventUpdateInput,
+  GroceriesStateDto,
   ListDto,
   ListItemDto,
   ListKind,
   MealSlotDto,
   MealSlotKind,
   OccurrenceDto,
+  PantryItemDto,
   PersonCreateInput,
   PersonDto,
   PersonUpdateInput,
+  ReceiptScanDto,
+  ReceiptScanResultDto,
   RedemptionDto,
   RewardDto,
+  ShoppingItemDto,
   StarBalanceDto
 } from '../types'
+import type { ParsedReceipt } from '../groceries/receiptParse'
 
 /**
  * The single source of truth for renderer <-> main communication.
@@ -145,6 +151,43 @@ export type IpcContract = {
 
   'meals:getRange': { req: { start: string; end: string }; res: MealSlotDto[] }
   'meals:set': { req: { date: string; slot: MealSlotKind; text: string | null }; res: void }
+
+  'groceries:getState': { req: void; res: GroceriesStateDto }
+  'pantry:add': {
+    req: { name: string; quantity?: number; unit?: string | null; minQuantity?: number; category?: string | null }
+    res: PantryItemDto
+  }
+  'pantry:update': {
+    req: { id: string; name?: string; quantity?: number; unit?: string | null; minQuantity?: number; category?: string | null }
+    res: PantryItemDto
+  }
+  /** relative quantity change (voice: "used 2 eggs"); floored at 0 */
+  'pantry:adjust': { req: { id: string; delta: number }; res: PantryItemDto }
+  'pantry:remove': { req: { id: string }; res: void }
+  'shopping:add': { req: { name: string; quantity?: number; unit?: string | null; note?: string | null }; res: ShoppingItemDto }
+  'shopping:update': { req: { id: string; name?: string; quantity?: number; note?: string | null }; res: ShoppingItemDto }
+  'shopping:toggle': { req: { id: string }; res: void }
+  'shopping:remove': { req: { id: string }; res: void }
+  'shopping:clearChecked': { req: void; res: void }
+  /** push every low-stock pantry item onto the shopping list */
+  'shopping:addLowStock': { req: void; res: { added: number } }
+  /** OCR a receipt photo (base64 PNG/JPEG); items are NOT applied until groceries:applyReceipt */
+  'groceries:scanReceipt': { req: { data: string }; res: ReceiptScanResultDto }
+  /** confirm (possibly edited) parsed receipt items into the pantry */
+  'groceries:applyReceipt': {
+    req: { scanId: string; items: { name: string; quantity: number; unit?: string | null }[] }
+    res: { updated: number }
+  }
+  'groceries:listReceipts': { req: void; res: ReceiptScanDto[] }
+  'groceries:receiptDetail': {
+    req: { scanId: string }
+    res: { scan: ReceiptScanDto; rawText: string; parsed: ParsedReceipt }
+  }
+  'groceries:receiptImage': { req: { scanId: string }; res: { dataUrl: string | null } }
+  /** open the store's product search (or store home when query is empty) in the system browser */
+  'groceries:openFrys': { req: { query?: string }; res: { url: string } }
+  /** build the order export (text or CSV) from unchecked shopping items and put it on the clipboard */
+  'groceries:copyList': { req: { format: 'text' | 'csv' }; res: { text: string } }
 
   'rewards:list': { req: void; res: RewardDto[] }
   'rewards:create': { req: { title: string; costStars: number }; res: RewardDto }
@@ -283,6 +326,9 @@ export const ALLOWED_CHANNEL_PREFIXES = [
   'lists:',
   'listItems:',
   'meals:',
+  'groceries:',
+  'pantry:',
+  'shopping:',
   'screensaver:',
   'kiosk:',
   'rss:',

@@ -79,6 +79,16 @@ which seeds demo data through the app's real IPC layer — so they stay honest.
   redemptions in settings
 - **Custom lists** (groceries, to-dos, anything): color-coded cards with
   tap-to-check items, clear-done, shared by the whole family
+- **Groceries & pantry** (new "Groceries" tab + companion tab): a weekly order
+  list with a store handoff (per-item deep links into the Fry's/Kroger search,
+  copyable text/CSV — the app never drives a logged-in store session; store URL
+  configurable in Settings → General), a pantry inventory with quantities and
+  low-stock tracking ("add low stock" pushes everything low onto the order),
+  receipt scanning (camera or photo on the kiosk, photo upload from a paired
+  phone) with **on-device OCR** (tesseract.js, language data cached locally) —
+  parsed items are reviewed and confirmed before they update the pantry — and
+  **voice commands** on both the display and the phone ("add 2 gallons of milk",
+  "we're out of eggs", "what's low", "send the list to Fry's", "scan the receipt")
 - **Phone companion app**: scan a QR code to pair, then edit lists, meals, and
   chores from any phone on your Wi-Fi — served by the display itself, no cloud
   (see "Companion app" below)

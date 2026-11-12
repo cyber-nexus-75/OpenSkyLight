@@ -110,7 +110,8 @@ describe('companionServer', () => {
       version: '0.0.0-test',
       staticRoot,
       avatarBytes: () => null,
-      uploadPhoto: async () => undefined
+      uploadPhoto: async () => undefined,
+      scanReceipt: async () => { throw new Error('not used in these tests') }
     })
     server.applySettings()
     // wait for listen
@@ -159,7 +160,8 @@ describe('companionServer', () => {
       version: '0.0.0-test',
       staticRoot,
       avatarBytes: (personId) => (personId === 'p1' ? png : null),
-      uploadPhoto: async () => undefined
+      uploadPhoto: async () => undefined,
+      scanReceipt: async () => { throw new Error('not used in these tests') }
     })
     server.applySettings()
     for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
@@ -204,6 +206,7 @@ describe('companionServer', () => {
       version: '0.0.0-test',
       staticRoot,
       avatarBytes: () => null,
+      scanReceipt: async () => { throw new Error('not used in these tests') },
       uploadPhoto: async (name, bytes) => {
         uploads.push({ name, bytes })
       }
@@ -244,6 +247,7 @@ describe('companionServer', () => {
       version: '0.0.0-test',
       staticRoot,
       avatarBytes: () => null,
+      scanReceipt: async () => { throw new Error('not used in these tests') },
       uploadPhoto: async () => {
         throw new Error('WebDAV not configured')
       }

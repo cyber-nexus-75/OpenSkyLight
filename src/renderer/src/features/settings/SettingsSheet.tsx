@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AiEventDraft, CalendarDto, ChoreDto, PersonDto, PersonRole, RecurrenceInput, RewardDto } from '@shared/types'
 import { PERSON_COLORS } from '@shared/types'
 import { describeRecurrence } from '@shared/recurrence/build'
+import { normalizeStoreBaseUrl } from '@shared/groceries/frys'
 import {
   useAuthMutations,
   useAuthStatus,
@@ -1577,6 +1578,38 @@ function SleepSection() {
   )
 }
 
+function GroceriesSection() {
+  const { data: settings } = useSettings()
+  const mutation = useSettingsMutation()
+  const [url, setUrl] = useState('')
+  useEffect(() => {
+    if (settings) setUrl(settings.groceries.storeBaseUrl)
+  }, [settings])
+  if (!settings) return null
+  return (
+    <div>
+      <FieldLabel>Groceries — order handoff store</FieldLabel>
+      <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+        <p className="text-sm font-semibold text-ink-faint">
+          The Groceries screen prepares the weekly order and hands it off to your store's site (Fry's runs on
+          Kroger). Items are never placed into a cart automatically — you finish the order in the store app or
+          site through the per-item search links.
+        </p>
+        <div className="flex gap-2">
+          <OskInput value={url} onChange={setUrl} placeholder="https://www.kroger.com" className="flex-1" />
+          <BigButton
+            variant="ghost"
+            disabled={!url.trim()}
+            onClick={() => mutation.mutate({ groceries: { storeBaseUrl: normalizeStoreBaseUrl(url) } })}
+          >
+            Save
+          </BigButton>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function GeneralTab() {
   const { data: settings } = useSettings()
   const mutation = useSettingsMutation()
@@ -1609,6 +1642,7 @@ function GeneralTab() {
       <SleepSection />
       <ParentalLockSection />
       <CompanionSection />
+      <GroceriesSection />
       <div>
         <FieldLabel>Default screen</FieldLabel>
         <SegmentedControl
