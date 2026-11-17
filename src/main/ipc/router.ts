@@ -1,4 +1,3 @@
-import { app, ipcMain, BrowserWindow } from 'electron'
 import { DateTime } from 'luxon'
 import type { ZodType } from 'zod'
 import { ZodError } from 'zod'
@@ -32,6 +31,7 @@ import type { WebdavService } from '../services/webdavService'
 import type { AiService } from '../services/aiService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
+import { broadcast } from './bus'
 
 export interface Services {
   settings: SettingsService
@@ -143,12 +143,6 @@ const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'chores:uncomplete': 'chores'
 }
 
-export function broadcast(channel: string, payload: unknown): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send(channel, payload)
-  }
-}
-
 interface ChannelEntry {
   schema: ZodType | null
   fn: (req: unknown) => unknown
@@ -189,14 +183,8 @@ export async function dispatch<K extends IpcChannel>(
   }
 }
 
-export function registerIpcHandlers(services: Services, table: ChannelTable): void {
-  for (const channel of table.keys()) {
-    ipcMain.handle(channel, (_event, payload) => dispatch(services, table, channel, payload, { gate: 'pin' }))
-  }
-}
-
 /** The single channel → {schema, handler} map consumed by ipcMain AND the companion HTTP API. */
-export function buildChannelTable(services: Services): ChannelTable {
+export function buildChannelTable(services: Services, version: string): ChannelTable {
   const table: ChannelTable = new Map()
   function handle<K extends IpcChannel>(
     channel: K,
@@ -207,7 +195,7 @@ export function buildChannelTable(services: Services): ChannelTable {
   }
 
   handle('app:getInfo', null, () => ({
-    version: app.getVersion(),
+    version,
     platform: process.platform,
     zone: DateTime.local().zoneName ?? 'UTC'
   }))
@@ -370,6 +358,7 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('screensaver:pickFolder', null, () => services.kiosk.pickFolder())
   handle('screensaver:listPhotos', null, () => services.kiosk.listPhotos())
   handle('kiosk:previewScreensaver', null, () => services.kiosk.previewScreensaver())
+  handle('kiosk:reportIdle', s.idleReportSchema, (req) => services.kiosk.reportIdle(req.seconds))
 
   handle('companion:getStatus', null, () => services.companion.getStatus())
   handle('companion:issueToken', null, () => services.companion.issueToken())

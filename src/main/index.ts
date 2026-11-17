@@ -7,14 +7,9 @@ import { createPeopleService } from './services/peopleService'
 import { createAvatarService } from './services/avatarService'
 import { createCalendarService } from './services/calendarService'
 import { createEventService } from './services/eventService'
-import {
-  buildChannelTable,
-  dispatch,
-  registerIpcHandlers,
-  broadcast,
-  type ChannelTable,
-  type Services
-} from './ipc/router'
+import { buildChannelTable, dispatch, type ChannelTable, type Services } from './ipc/router'
+import { registerIpcHandlers } from './ipc/electronIpc'
+import { addBroadcastSink, broadcast } from './ipc/bus'
 import { createCompanionTokens } from './companion/companionTokens'
 import { createCompanionServer } from './companion/companionServer'
 import { createMainWindow } from './window'
@@ -58,6 +53,9 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
+    addBroadcastSink((channel, payload) => {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, payload)
+    })
     const { db } = openDatabase(join(app.getPath('userData'), 'openskylight.db'))
     const deviceTz = (): string => DateTime.local().zoneName ?? 'UTC'
 
@@ -147,7 +145,7 @@ if (!gotLock) {
       birdnet: createBirdNetService(),
       companion
     }
-    channelTable = buildChannelTable(services)
+    channelTable = buildChannelTable(services, app.getVersion())
     registerIpcHandlers(services, channelTable)
     createMainWindow()
     syncManager.start()

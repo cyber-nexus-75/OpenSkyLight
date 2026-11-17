@@ -24,6 +24,9 @@ export function createKiosk(deps: {
   let screensaverOn = false
   let sleeping = false
   let blockerId: number | null = null
+  // last idle report from a web client (server mode has no OS idle API)
+  let webIdleSeconds = 0
+  let webIdleAtMs = 0
 
   /** Photos are served through osl-photo:// so the sandboxed renderer never touches the filesystem. */
   function registerPhotoProtocol(): void {
@@ -138,7 +141,8 @@ export function createKiosk(deps: {
 
     idleTimer = setInterval(() => {
       const s = settings.getAll().screensaver
-      const idleSeconds = powerMonitor.getSystemIdleTime()
+      const reported = Date.now() - webIdleAtMs < IDLE_POLL_MS * 2 ? webIdleSeconds : 0
+      const idleSeconds = Math.max(powerMonitor.getSystemIdleTime(), reported)
       setScreensaver(s.folder !== null && idleSeconds >= s.idleMinutes * 60)
     }, IDLE_POLL_MS)
 
@@ -163,7 +167,13 @@ export function createKiosk(deps: {
     app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath })
   }
 
-  return { start, stop, listPhotos, pickFolder, previewScreensaver, setLaunchOnStartup }
+  /** Browser kiosks (server mode) report their own idle time; fresh reports win over the OS value. */
+  function reportIdle(seconds: number): void {
+    webIdleSeconds = seconds
+    webIdleAtMs = Date.now()
+  }
+
+  return { start, stop, listPhotos, pickFolder, previewScreensaver, setLaunchOnStartup, reportIdle }
 }
 
 export type Kiosk = ReturnType<typeof createKiosk>
