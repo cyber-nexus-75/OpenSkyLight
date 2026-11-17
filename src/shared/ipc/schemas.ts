@@ -290,4 +290,6 @@ export const citySearchSchema = z.object({ query: z.string().trim().min(2).max(8
 
 export const pinVerifySchema = z.object({ pin: z.string().regex(/^\d{4,8}$/) })
 
+export const idleReportSchema = z.object({ seconds: z.number().int().min(0).max(7 * 24 * 3600) })
+
 export const pinSetSchema = z.object({ pin: z.string().regex(/^\d{4,8}$/).nullable() })

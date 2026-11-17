@@ -230,6 +230,8 @@ export type IpcContract = {
     res: { drafts: AiEventDraft[] }
   }
   'kiosk:previewScreensaver': { req: void; res: void }
+  /** Web-kiosk clients report their own idle time so the screensaver works without OS power APIs. */
+  'kiosk:reportIdle': { req: { seconds: number }; res: void }
 
   'companion:getStatus': {
     req: void
@@ -273,6 +275,7 @@ export const ALLOWED_CHANNEL_PREFIXES = [
   'calendars:',
   'events:',
   'google:',
+  'caldav:',
   'ics:',
   'sync:',
   'weather:',
@@ -287,6 +290,8 @@ export const ALLOWED_CHANNEL_PREFIXES = [
   'kiosk:',
   'rss:',
   'camera:',
+  'unifi:',
+  'webdav:',
   'companion:',
   'birdnet:'
 ] as const

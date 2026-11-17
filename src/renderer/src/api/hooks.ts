@@ -428,10 +428,16 @@ export function usePushInvalidation(): void {
       const title = (data as { title?: string })?.title ?? 'An event'
       pushToast(`"${title}" was changed elsewhere — showing the latest version`)
     })
+    // server mode: the Google consent URL arrives as a push; open it on this device
+    const offAuthUrl = window.osl.on('push:googleAuthUrl', (data) => {
+      const url = (data as { url?: string })?.url
+      if (url) window.open(url, '_blank', 'noopener')
+    })
     return () => {
       offData()
       offStatus()
       offConflict()
+      offAuthUrl()
     }
   }, [queryClient, pushToast])
 }

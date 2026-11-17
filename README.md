@@ -122,6 +122,57 @@ How it works and what to know:
   and your phone and it works from anywhere, unchanged. (Traffic on your LAN is
   plain HTTP — fine for a home network, which is the threat model here.)
 
+### Server mode (host on a server, open from any device)
+
+Instead of installing the Electron app on the display, you can run the whole
+app **headless on a server** (a home server, NAS, Raspberry Pi, VM) and open
+the full kiosk UI in a browser on any device — the Surface tablet, a wall
+mounted tablet, a phone. The server owns the SQLite database, all sync
+(Google/CalDAV/ICS/WebDAV), cameras, and the companion pairing; browsers just
+render the UI over HTTP.
+
+```bash
+git clone <this repo> && cd OpenSkyLight
+npm ci --ignore-scripts && npm rebuild better-sqlite3   # native module for plain Node, not Electron
+npm run build
+npm run start:server          # = node out/server/index.js
+```
+
+Then on the display device, open `http://<server-ip>:8080/` (add it to the
+home screen / run the browser in kiosk mode — see
+[openskylight-linux](https://github.com/cyber-nexus-75/openskylight-linux)
+for a Surface setup script that does exactly this).
+
+Configuration (environment variables):
+
+| Var | Default | Meaning |
+| --- | --- | --- |
+| `OSL_DATA_DIR` | `./data` | where `openskylight.db` and caches live — protect this directory |
+| `OSL_PORT` / `OSL_HOST` | `8080` / `0.0.0.0` | listen address |
+| `OSL_SERVER_TOKEN` | unset | when set, every page/API call needs a session: open `http://<server>:<port>/api/login?t=<token>` once per device (sets a cookie) |
+| `OSL_PUBLIC_URL` | `http://<lan-ip>:<port>` | externally reachable base URL, used as the Google OAuth redirect |
+
+How it works and what to know:
+
+- One port serves everything: the web app (static SPA), the RPC API
+  (`POST /api/rpc/<channel>`), live push updates (SSE `GET /api/events`),
+  photos/avatars (`/media/osl-*/...`), camera streams (`/camera-ws` WebSocket),
+  and the Google OAuth redirect (`/__oauth/google`). The same channel table and
+  **parental PIN gate** as the desktop app are enforced server-side — PIN-gated
+  operations return `LOCKED` until `auth:verifyPin` succeeds.
+- Google sign-in in server mode doesn't need a browser on the server: tap
+  connect on any device, the consent URL is pushed to that browser, and Google
+  redirects back to the server itself.
+- The screensaver/sleep schedule still work: the browser reports its own idle
+  time to the server, and while awake it holds a screen wake lock.
+- Auto-update is off in server mode (the stub makes it a no-op) — update by
+  rebuilding/restarting the process. Secret storage falls back to the `plain:`
+  format (no OS keychain on a server), so keep `OSL_DATA_DIR` private
+  (filesystem permissions).
+- Traffic on your LAN is plain HTTP — fine for a home network. Put it behind
+  Tailscale or a reverse proxy with TLS for anything wider, and set
+  `OSL_SERVER_TOKEN` if the LAN isn't fully trusted.
+
 ### Connecting Google Calendar
 
 1. Create a free Google Cloud project, enable the **Google Calendar API**
@@ -168,6 +219,8 @@ npm install        # also rebuilds better-sqlite3 for Electron
 npm run dev        # windowed dev mode with hot reload
 npm run dev -- --kiosk   # fullscreen kiosk in dev
 npm run dev:companion    # companion web app with hot reload (proxies /api to a running kiosk)
+npm run build:server     # headless server bundle -> out/server
+npm run start:server     # run the web-app server (see "Server mode" above)
 npm test           # unit tests (run inside Electron's Node for the native module)
 npm run typecheck
 node scripts/e2e-smoke.mjs   # launches the built app and creates an event end-to-end
@@ -186,3 +239,7 @@ Data lives in SQLite at `%APPDATA%/openskylight/openskylight.db`.
 - Recurrence is stored as RRULE masters + exception rows and expanded at query
   time in `src/shared/recurrence/expand.ts` (rrule + Luxon, DST-safe, heavily unit-tested)
 - State: TanStack Query over IPC + Zustand for view state
+- The same main-process channel table also runs **headless** (`src/server/`) as a
+  Node web server: browsers get the renderer over HTTP with `window.osl`
+  bridged to `POST /api/rpc/:channel` + SSE push (`src/renderer/src/webBridge.ts`);
+  the `electron` module is aliased to a stub at bundle time
