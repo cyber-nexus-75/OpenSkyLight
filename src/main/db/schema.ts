@@ -116,16 +116,32 @@ export const chores = sqliteTable('chores', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   icon: text('icon'),
+  /** null when upForGrabs — anyone may claim it */
   personId: text('person_id').references(() => people.id),
   starsValue: integer('stars_value').notNull().default(1),
   scheduleRrule: text('schedule_rrule'),
   dueDate: text('due_date'),
-  routine: text('routine', { enum: ['morning', 'evening'] }),
+  routine: text('routine', { enum: ['morning', 'afternoon', 'evening'] }),
+  /** claimable by any family member; stars go to whoever checks it off */
+  upForGrabs: integer('up_for_grabs', { mode: 'boolean' }).notNull().default(false),
+  /** one-time chore that comes back every day after completion */
+  repeatAfter: integer('repeat_after', { mode: 'boolean' }).notNull().default(false),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
   deletedAt: text('deleted_at')
 })
+
+export const choreLinks = sqliteTable(
+  'chore_links',
+  {
+    id: text('id').primaryKey(),
+    choreId: text('chore_id').notNull().references(() => chores.id),
+    linkedChoreId: text('linked_chore_id').notNull().references(() => chores.id),
+    createdAt: text('created_at').notNull()
+  },
+  (t) => [index('idx_chore_links').on(t.choreId), index('idx_chore_links_linked').on(t.linkedChoreId)]
+)
 
 export const choreCompletions = sqliteTable(
   'chore_completions',

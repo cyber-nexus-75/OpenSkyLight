@@ -311,7 +311,8 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('chores:update', s.choreUpdateSchema, (req) => services.chores.update(req))
   handle('chores:delete', s.idSchema, (req) => services.chores.remove(req.id))
   handle('chores:getDay', s.choreDaySchema, (req) => services.chores.getDay(req.date))
-  handle('chores:complete', s.choreCheckSchema, (req) => services.chores.complete(req.choreId, req.date))
+  handle('chores:getTasks', s.choreDaySchema, (req) => services.chores.getTasks(req.date))
+  handle('chores:complete', s.choreCheckSchema, (req) => services.chores.complete(req.choreId, req.date, req.personId))
   handle('chores:uncomplete', s.choreCheckSchema, (req) => services.chores.uncomplete(req.choreId, req.date))
 
   handle('stars:balances', null, () => services.chores.balances())

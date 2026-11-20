@@ -256,13 +256,21 @@ export function useChoresDay(date: string) {
   })
 }
 
+export function useChoresTasks(date: string) {
+  return useQuery({
+    queryKey: ['choresTasks', date],
+    queryFn: () => ipcInvoke('chores:getTasks', { date }),
+    placeholderData: (prev) => prev
+  })
+}
+
 export function useBalances() {
   return useQuery({ queryKey: ['balances'], queryFn: () => ipcInvoke('stars:balances', undefined) })
 }
 
 export function useChoreMutations() {
-  const defKeys = [['chores'], ['choresDay']]
-  const checkKeys = [['choresDay'], ['balances']]
+  const defKeys = [['chores'], ['choresDay'], ['choresTasks']]
+  const checkKeys = [['choresDay'], ['choresTasks'], ['balances']]
   return {
     create: useInvalidatingMutation(
       (input: Parameters<typeof ipcInvoke<'chores:create'>>[1]) => ipcInvoke('chores:create', input),
@@ -274,7 +282,7 @@ export function useChoreMutations() {
     ),
     remove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('chores:delete', input), defKeys),
     complete: useInvalidatingMutation(
-      (input: { choreId: string; date: string }) => ipcInvoke('chores:complete', input),
+      (input: { choreId: string; date: string; personId?: string }) => ipcInvoke('chores:complete', input),
       checkKeys
     ),
     uncomplete: useInvalidatingMutation(
@@ -418,6 +426,7 @@ export function usePushInvalidation(): void {
       if (domain === 'chores') {
         // chore day views and star balances key off their own roots
         void queryClient.invalidateQueries({ queryKey: ['choresDay'] })
+        void queryClient.invalidateQueries({ queryKey: ['choresTasks'] })
         void queryClient.invalidateQueries({ queryKey: ['balances'] })
       }
     })
