@@ -141,3 +141,32 @@ export function useAiImport() {
 export function useAvatarMutation() {
   return useInvalidatingMutation((input: AvatarSetInput) => rpc('people:setAvatar', input), [['people']])
 }
+
+export function useWallNote() {
+  return useQuery({
+    queryKey: ['wallnote'],
+    queryFn: () => rpc('wallnote:get', undefined),
+    ...LIVE
+  })
+}
+
+export function useWallNoteMutation() {
+  return useInvalidatingMutation(
+    (input: { text: string }) => rpc('wallnote:set', input),
+    [['wallnote']]
+  )
+}
+
+export function useRecipes() {
+  return useQuery({ queryKey: ['recipes'], queryFn: () => rpc('recipes:list', undefined), ...LIVE })
+}
+
+export function useRecipeMutations() {
+  return {
+    importUrl: useInvalidatingMutation(
+      (input: { url: string }) => rpc('recipes:importUrl', input),
+      [['recipes']]
+    ),
+    remove: useInvalidatingMutation((input: { id: string }) => rpc('recipes:delete', input), [['recipes']])
+  }
+}

@@ -16,7 +16,13 @@ export const personUpdateSchema = z.object({
   name: z.string().trim().min(1).max(60).optional(),
   color: hexColor.optional(),
   role: z.enum(['parent', 'child']).optional(),
-  sortOrder: z.number().int().optional()
+  sortOrder: z.number().int().optional(),
+  birthday: z
+    .string()
+    .regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'Birthday must be MM-DD')
+    .nullable()
+    .optional(),
+  birthYear: z.number().int().min(1900).max(2100).nullable().optional()
 })
 export const avatarSetSchema = z.object({
   personId: id,
@@ -153,6 +159,7 @@ export const settingsPatchSchema = z.object({
       theme: z.enum(['light', 'dark', 'auto']).optional(),
       weather: z.object({ lat: z.number(), lon: z.number(), label: z.string() }).nullable().optional(),
       sleep: z.object({ enabled: z.boolean(), start: z.string(), end: z.string() }).optional(),
+      nightDimming: z.object({ enabled: z.boolean(), start: z.string(), end: z.string(), level: z.number().int().min(10).max(90) }).optional(),
       screensaver: z.object({ folder: z.string().nullable(), idleMinutes: z.number().int().min(1).max(120) }).optional(),
       launchOnStartup: z.boolean().optional(),
       companion: z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65535) }).optional(),
@@ -184,6 +191,18 @@ export const icsAddSchema = z.object({
   url: z.string().trim().url().max(2000),
   name: z.string().trim().min(1).max(80),
   color: hexColor
+})
+export const backupRestoreSchema = z.object({ name: z.string().trim().min(1).max(200) })
+export const wallnoteSetSchema = z.object({ text: z.string().max(2000) })
+export const recipeImportSchema = z.object({
+  url: z.string().trim().url().max(2000)
+})
+export const aiScanRemoveSchema = z.object({
+  batch: z.number().int().min(0),
+  index: z.number().int().min(0)
+})
+export const doorbellCameraSchema = z.object({
+  cameraId: id.nullable()
 })
 export const aiConfigSchema = z.object({
   endpointUrl: z.string().trim().min(8).max(2000),
@@ -229,6 +248,7 @@ const routine = z.enum(['morning', 'evening']).nullable()
 export const choreCreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
   personId: id,
+  rotationPersonIds: z.array(id).max(10).optional(),
   starsValue: z.number().int().min(0).max(99),
   recurrence: recurrenceSchema.nullish(),
   anchorDate: isoDate.optional(),
@@ -239,6 +259,7 @@ export const choreUpdateSchema = z.object({
   id,
   title: z.string().trim().min(1).max(120).optional(),
   personId: id.optional(),
+  rotationPersonIds: z.array(id).max(10).optional(),
   starsValue: z.number().int().min(0).max(99).optional(),
   recurrence: recurrenceSchema.nullable().optional(),
   anchorDate: isoDate.optional(),
