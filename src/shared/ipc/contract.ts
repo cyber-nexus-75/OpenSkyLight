@@ -19,12 +19,16 @@ import type {
   MealSlotDto,
   MealSlotKind,
   OccurrenceDto,
+  RecipeCreateInput,
+  RecipeDto,
+  RecipeUpdateInput,
   PersonCreateInput,
   PersonDto,
   PersonUpdateInput,
   RedemptionDto,
   RewardDto,
-  StarBalanceDto
+  StarBalanceDto,
+  TaskItemDto
 } from '../types'
 
 /**
@@ -129,7 +133,11 @@ export type IpcContract = {
   'chores:update': { req: ChoreUpdateInput; res: ChoreDto }
   'chores:delete': { req: { id: string }; res: void }
   'chores:getDay': { req: { date: string }; res: DayChoreDto[] }
-  'chores:complete': { req: { choreId: string; date: string }; res: { balance: number } }
+  'chores:getTasks': { req: { date: string }; res: TaskItemDto[] }
+  'chores:complete': {
+    req: { choreId: string; date: string; /** claimer for up-for-grabs chores */ personId?: string }
+    res: { balance: number }
+  }
   'chores:uncomplete': { req: { choreId: string; date: string }; res: { balance: number } }
 
   'stars:balances': { req: void; res: StarBalanceDto[] }
@@ -144,7 +152,25 @@ export type IpcContract = {
   'listItems:clearChecked': { req: { listId: string }; res: void }
 
   'meals:getRange': { req: { start: string; end: string }; res: MealSlotDto[] }
-  'meals:set': { req: { date: string; slot: MealSlotKind; text: string | null }; res: void }
+  'meals:set': {
+    req: {
+      date: string
+      slot: MealSlotKind
+      text: string | null
+      recipeId?: string | null
+      personIds?: string[]
+    }
+    res: void
+  }
+  /** drag-and-drop: move a meal to another day/slot (swaps if occupied) */
+  'meals:move': { req: { id: string; date: string; slot: MealSlotKind }; res: void }
+  /** append a linked recipe's ingredients to a grocery list (deduped) */
+  'meals:addIngredients': { req: { mealSlotId: string; listId?: string }; res: { added: number } }
+
+  'recipes:list': { req: void; res: RecipeDto[] }
+  'recipes:create': { req: RecipeCreateInput; res: RecipeDto }
+  'recipes:update': { req: RecipeUpdateInput; res: RecipeDto }
+  'recipes:delete': { req: { id: string }; res: void }
 
   'rewards:list': { req: void; res: RewardDto[] }
   'rewards:create': { req: { title: string; costStars: number }; res: RewardDto }

@@ -51,28 +51,115 @@ describe('lists', () => {
 
 describe('meals', () => {
   let handle: DbHandle
+  let lists: ListsService
   let meals: MealsService
 
   beforeEach(() => {
     handle = openDatabase(':memory:')
-    meals = createMealsService(handle.db)
+    lists = createListsService(handle.db)
+    meals = createMealsService(handle.db, lists)
+    handle.sqlite
+      .prepare(
+        "INSERT INTO people (id, name, color, role, sort_order, created_at) VALUES ('kid1','Emma','#46A758','child',0,'2026-01-01T00:00:00Z')"
+      )
+      .run()
   })
 
   it('sets, overwrites, and clears slots with one row per (date, slot)', () => {
-    meals.set('2026-06-10', 'dinner', 'Tacos')
-    meals.set('2026-06-10', 'dinner', 'Pizza')
-    meals.set('2026-06-10', 'lunch', 'Sandwiches')
+    meals.set('2026-06-10', 'dinner', { text: 'Tacos' })
+    meals.set('2026-06-10', 'dinner', { text: 'Pizza' })
+    meals.set('2026-06-10', 'lunch', { text: 'Sandwiches' })
     expect(meals.getRange('2026-06-10', '2026-06-10')).toHaveLength(2)
     expect(meals.getRange('2026-06-10', '2026-06-10').find((m) => m.slot === 'dinner')?.text).toBe('Pizza')
-    meals.set('2026-06-10', 'dinner', null)
+    meals.set('2026-06-10', 'dinner', { text: null })
     expect(meals.getRange('2026-06-10', '2026-06-10')).toHaveLength(1)
   })
 
   it('range queries are inclusive and date-scoped', () => {
-    meals.set('2026-06-08', 'dinner', 'Soup')
-    meals.set('2026-06-14', 'dinner', 'Stew')
-    meals.set('2026-06-15', 'dinner', 'Out of range')
+    meals.set('2026-06-08', 'dinner', { text: 'Soup' })
+    meals.set('2026-06-14', 'dinner', { text: 'Stew' })
+    meals.set('2026-06-15', 'dinner', { text: 'Out of range' })
     const week = meals.getRange('2026-06-08', '2026-06-14')
     expect(week.map((m) => m.text).sort()).toEqual(['Soup', 'Stew'])
+  })
+})
+
+describe('meals upgrades (M6)', () => {
+  let handle: DbHandle
+  let lists: ListsService
+  let meals: MealsService
+
+  beforeEach(() => {
+    handle = openDatabase(':memory:')
+    lists = createListsService(handle.db)
+    meals = createMealsService(handle.db, lists)
+    for (const [id, name, color] of [
+      ['kid1', 'Emma', '#46A758'],
+      ['kid2', 'Liam', '#0091FF']
+    ] as const) {
+      handle.sqlite
+        .prepare(
+          `INSERT INTO people (id, name, color, role, sort_order, created_at) VALUES (?, ?, ?, 'child', 0, '2026-01-01T00:00:00Z')`
+        )
+        .run(id, name, color)
+    }
+  })
+
+  it('recipe CRUD round-trips ingredients and tags', () => {
+    const r = meals.createRecipe({ title: 'Tacos', ingredients: ['Tortillas', 'Cheese'], tags: ['dinner'] })
+    expect(meals.listRecipes()[0]).toMatchObject({ title: 'Tacos', ingredients: ['Tortillas', 'Cheese'], tags: ['dinner'] })
+    meals.updateRecipe({ id: r.id, ingredients: ['Tortillas', 'Cheese', 'Salsa'] })
+    expect(meals.listRecipes()[0].ingredients).toHaveLength(3)
+    meals.removeRecipe(r.id)
+    expect(meals.listRecipes()).toHaveLength(0)
+  })
+
+  it('links a meal to a recipe and assigns people; text falls back to the recipe title', () => {
+    const r = meals.createRecipe({ title: 'Pancakes', ingredients: ['Flour', 'Eggs'] })
+    meals.set('2026-06-10', 'breakfast', { text: null, recipeId: r.id, personIds: ['kid1', 'kid2'] })
+    const [m] = meals.getRange('2026-06-10', '2026-06-10')
+    expect(m.text).toBe('Pancakes')
+    expect(m.recipeId).toBe(r.id)
+    expect(m.personIds.sort()).toEqual(['kid1', 'kid2'])
+    // re-assigning replaces the set
+    meals.set('2026-06-10', 'breakfast', { text: null, recipeId: r.id, personIds: ['kid1'] })
+    expect(meals.getRange('2026-06-10', '2026-06-10')[0].personIds).toEqual(['kid1'])
+    // clearing removes the row and its assignments
+    meals.set('2026-06-10', 'breakfast', { text: null })
+    expect(meals.getRange('2026-06-10', '2026-06-10')).toHaveLength(0)
+  })
+
+  it('move swaps with an occupied target slot', () => {
+    meals.set('2026-06-10', 'dinner', { text: 'A' })
+    meals.set('2026-06-11', 'dinner', { text: 'B' })
+    const [a] = meals.getRange('2026-06-10', '2026-06-10')
+    meals.move(a.id, '2026-06-11', 'dinner')
+    const range = meals.getRange('2026-06-10', '2026-06-11')
+    expect(range.find((m) => m.date === '2026-06-10' && m.slot === 'dinner')?.text).toBe('B')
+    expect(range.find((m) => m.date === '2026-06-11' && m.slot === 'dinner')?.text).toBe('A')
+    // moving to an empty slot just moves
+    meals.move(a.id, '2026-06-12', 'lunch')
+    expect(meals.getRange('2026-06-12', '2026-06-12')[0]).toMatchObject({ slot: 'lunch', text: 'A' })
+  })
+
+  it('addIngredients appends deduped ingredients to the grocery list (creating one if needed)', () => {
+    const r = meals.createRecipe({ title: 'Soup', ingredients: ['Carrots', 'Celery', 'Carrots'] })
+    meals.set('2026-06-10', 'dinner', { text: null, recipeId: r.id })
+    const [m] = meals.getRange('2026-06-10', '2026-06-10')
+    expect(meals.addIngredients(m.id).added).toBe(2)
+    const groceries = lists.getAll().find((l) => l.kind === 'grocery')
+    expect(groceries?.name).toBe('Groceries')
+    expect(groceries?.items.map((i) => i.text).sort()).toEqual(['Carrots', 'Celery'])
+    // second run adds nothing
+    expect(meals.addIngredients(m.id).added).toBe(0)
+    // explicit list target
+    const todo = lists.create({ name: 'Party', color: '#0091FF', kind: 'todo' })
+    expect(meals.addIngredients(m.id, todo.id).added).toBe(2)
+  })
+
+  it('rejects ingredients for a meal without a recipe', () => {
+    meals.set('2026-06-10', 'lunch', { text: 'Leftovers' })
+    const [m] = meals.getRange('2026-06-10', '2026-06-10')
+    expect(() => meals.addIngredients(m.id)).toThrow(/no linked recipe/)
   })
 })

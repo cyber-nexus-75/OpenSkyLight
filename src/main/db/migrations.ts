@@ -208,6 +208,27 @@ const MIGRATIONS: string[] = [
   ALTER TABLE calendars ADD COLUMN caldav_account_id TEXT REFERENCES caldav_accounts(id);
   ALTER TABLE calendars ADD COLUMN caldav_calendar_url TEXT;
   ALTER TABLE calendars ADD COLUMN person_id TEXT REFERENCES people(id);
+  `,
+  // 003 — chore upgrades: up-for-grabs pool, repeat-after-completion, linked chores, afternoon routine
+  `
+  ALTER TABLE chores ADD COLUMN up_for_grabs INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE chores ADD COLUMN repeat_after INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE chore_links (
+    id TEXT PRIMARY KEY,
+    chore_id TEXT NOT NULL REFERENCES chores(id),
+    linked_chore_id TEXT NOT NULL REFERENCES chores(id),
+    created_at TEXT NOT NULL,
+    UNIQUE (chore_id, linked_chore_id)
+  );
+  `,
+  // 004 — meals: per-person assignment, ordering, recipe linkage
+  `
+  ALTER TABLE meal_slots ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE meal_slot_people (
+    meal_slot_id TEXT NOT NULL REFERENCES meal_slots(id) ON DELETE CASCADE,
+    person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+    PRIMARY KEY (meal_slot_id, person_id)
+  );
   `
 ]
 

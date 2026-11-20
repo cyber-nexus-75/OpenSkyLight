@@ -171,7 +171,7 @@ export interface EventDeleteInput {
   occurrenceStart?: string
 }
 
-export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'lists'
+export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'tasks' | 'lists'
 
 export type HomeTileType =
   | 'todayEvents'
@@ -236,47 +236,90 @@ export type MealSlotKind = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export const MEAL_SLOTS: MealSlotKind[] = ['breakfast', 'lunch', 'dinner', 'snack']
 
+export interface RecipeDto {
+  id: string
+  title: string
+  ingredients: string[]
+  instructions: string | null
+  tags: string[]
+}
+
+export interface RecipeCreateInput {
+  title: string
+  ingredients?: string[]
+  instructions?: string | null
+  tags?: string[]
+}
+
+export interface RecipeUpdateInput {
+  id: string
+  title?: string
+  ingredients?: string[]
+  instructions?: string | null
+  tags?: string[]
+}
+
 export interface MealSlotDto {
+  id: string
   /** YYYY-MM-DD */
   date: string
   slot: MealSlotKind
+  /** free text, or the recipe title when linked to a recipe */
   text: string
+  recipeId: string | null
+  /** profiles this meal is assigned to (school lunch, dietary needs) */
+  personIds: string[]
+  sortOrder: number
 }
 
-export type ChoreRoutine = 'morning' | 'evening' | null
+export type ChoreRoutine = 'morning' | 'afternoon' | 'evening' | null
 
 export interface ChoreDto {
   id: string
   title: string
   icon: string | null
-  personId: string
+  /** null = up for grabs (anyone may claim it) */
+  personId: string | null
   starsValue: number
   /** null = one-time chore on anchorDate */
   recurrence: RecurrenceInput | null
   /** YYYY-MM-DD; first day the chore applies (and the only day for one-offs) */
   anchorDate: string
   routine: ChoreRoutine
+  /** claimable by any family member; stars go to whoever checks it off */
+  upForGrabs: boolean
+  /** one-time chore that is due again every day after its anchor */
+  repeatAfter: boolean
+  /** chores that auto-complete together with this one */
+  linkedChoreIds: string[]
   active: boolean
   sortOrder: number
 }
 
 export interface ChoreCreateInput {
   title: string
-  personId: string
+  /** null = up for grabs */
+  personId: string | null
   starsValue: number
   recurrence?: RecurrenceInput | null
   anchorDate?: string
   routine?: ChoreRoutine
+  upForGrabs?: boolean
+  repeatAfter?: boolean
+  linkedChoreIds?: string[]
 }
 
 export interface ChoreUpdateInput {
   id: string
   title?: string
-  personId?: string
+  personId?: string | null
   starsValue?: number
   recurrence?: RecurrenceInput | null
   anchorDate?: string
   routine?: ChoreRoutine
+  upForGrabs?: boolean
+  repeatAfter?: boolean
+  linkedChoreIds?: string[]
   active?: boolean
 }
 
@@ -284,10 +327,32 @@ export interface DayChoreDto {
   choreId: string
   title: string
   icon: string | null
-  personId: string
+  /** null = up for grabs */
+  personId: string | null
+  upForGrabs: boolean
+  /** who claimed an up-for-grabs chore (null when not completed or not a grab) */
+  claimerId: string | null
   starsValue: number
   routine: ChoreRoutine
   completed: boolean
+}
+
+/** One row of the all-tasks view (chores across people + the up-for-grabs pool). */
+export interface TaskItemDto {
+  choreId: string
+  title: string
+  icon: string | null
+  personId: string | null
+  upForGrabs: boolean
+  claimerId: string | null
+  starsValue: number
+  routine: ChoreRoutine
+  recurrence: RecurrenceInput | null
+  anchorDate: string
+  dueToday: boolean
+  completedToday: boolean
+  /** one-time chore whose anchor date passed without a completion */
+  overdue: boolean
 }
 
 export interface StarBalanceDto {
@@ -330,6 +395,8 @@ export interface AppSettings {
   companion: { enabled: boolean; port: number }
   /** background sync cadence for calendar providers, in minutes */
   syncIntervalMinutes: number
+  /** chore board: 'all' shows every routine, 'current' only the current part of day */
+  routinesDisplay: 'all' | 'current'
 }
 
 import { DEFAULT_HOME_LAYOUT } from '../home'
@@ -346,7 +413,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchOnStartup: false,
   homeLayout: DEFAULT_HOME_LAYOUT,
   companion: { enabled: false, port: 8420 },
-  syncIntervalMinutes: 15
+  syncIntervalMinutes: 15,
+  routinesDisplay: 'all'
 }
 
 /** Touch-friendly person color palette (Skylight-style) */

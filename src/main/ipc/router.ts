@@ -89,6 +89,9 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'chores:create',
   'chores:update',
   'chores:delete',
+  'recipes:create',
+  'recipes:update',
+  'recipes:delete',
   'rewards:create',
   'rewards:update',
   'rewards:delete',
@@ -136,6 +139,11 @@ const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'listItems:delete': 'lists',
   'listItems:clearChecked': 'lists',
   'meals:set': 'meals',
+  'meals:move': 'meals',
+  'meals:addIngredients': 'lists',
+  'recipes:create': 'meals',
+  'recipes:update': 'meals',
+  'recipes:delete': 'meals',
   'chores:create': 'chores',
   'chores:update': 'chores',
   'chores:delete': 'chores',
@@ -311,7 +319,8 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('chores:update', s.choreUpdateSchema, (req) => services.chores.update(req))
   handle('chores:delete', s.idSchema, (req) => services.chores.remove(req.id))
   handle('chores:getDay', s.choreDaySchema, (req) => services.chores.getDay(req.date))
-  handle('chores:complete', s.choreCheckSchema, (req) => services.chores.complete(req.choreId, req.date))
+  handle('chores:getTasks', s.choreDaySchema, (req) => services.chores.getTasks(req.date))
+  handle('chores:complete', s.choreCheckSchema, (req) => services.chores.complete(req.choreId, req.date, req.personId))
   handle('chores:uncomplete', s.choreCheckSchema, (req) => services.chores.uncomplete(req.choreId, req.date))
 
   handle('stars:balances', null, () => services.chores.balances())
@@ -334,7 +343,14 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('listItems:clearChecked', s.listIdSchema, (req) => services.lists.clearChecked(req.listId))
 
   handle('meals:getRange', s.mealsRangeSchema, (req) => services.meals.getRange(req.start, req.end))
-  handle('meals:set', s.mealSetSchema, (req) => services.meals.set(req.date, req.slot, req.text))
+  handle('meals:set', s.mealSetSchema, (req) => services.meals.set(req.date, req.slot, req))
+  handle('meals:move', s.mealMoveSchema, (req) => services.meals.move(req.id, req.date, req.slot))
+  handle('meals:addIngredients', s.mealAddIngredientsSchema, (req) => services.meals.addIngredients(req.mealSlotId, req.listId))
+
+  handle('recipes:list', null, () => services.meals.listRecipes())
+  handle('recipes:create', s.recipeCreateSchema, (req) => services.meals.createRecipe(req))
+  handle('recipes:update', s.recipeUpdateSchema, (req) => services.meals.updateRecipe(req))
+  handle('recipes:delete', s.idSchema, (req) => services.meals.removeRecipe(req.id))
 
   handle('rss:getFeed', s.rssFeedSchema, (req) => services.rss.getFeed(req.feedId))
 

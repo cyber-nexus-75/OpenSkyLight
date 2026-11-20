@@ -152,7 +152,62 @@ try {
   if (!pushedIcs.includes('SUMMARY:Pushed to Nextcloud')) throw new Error('pushed event missing SUMMARY')
   stub.close()
 
-  console.log('SMOKE PASS: event, avatar, and CalDAV push round-trip verified')
+  // M7 chores: up-for-grabs claim + linked completion + tasks view, through the real IPC layer
+  await page.evaluate(async () => {
+    const inv = async (ch, p) => {
+      const res = await window.osl.invoke(ch, p)
+      if (!res.ok) throw new Error(`${ch}: ${res.error?.message}`)
+      return res.data
+    }
+    const people = await inv('people:list', undefined)
+    const kid = people.find((p) => p.name === 'Test Kid')
+    if (!kid) throw new Error('Test Kid missing')
+    const today = new Date().toISOString().slice(0, 10)
+    const grab = await inv('chores:create', {
+      title: 'Smoke grab', personId: null, starsValue: 2,
+      recurrence: { freq: 'daily' }, upForGrabs: true, anchorDate: today
+    })
+    await inv('chores:complete', { choreId: grab.id, date: today, personId: kid.id })
+    const linked = await inv('chores:create', { title: 'Smoke pair', personId: kid.id, starsValue: 1, recurrence: { freq: 'daily' } })
+    await inv('chores:update', { id: linked.id, linkedChoreIds: [grab.id] })
+    const tasks = await inv('chores:getTasks', { date: today })
+    const grabTask = tasks.find((t) => t.choreId === grab.id)
+    if (!grabTask?.completedToday || grabTask.claimerId !== kid.id) throw new Error('grab claim not reflected in tasks')
+  })
+
+  // M6 meals: recipe + per-person assignment + move + ingredients-to-list, through the real IPC layer
+  await page.evaluate(async () => {
+    const inv = async (ch, p) => {
+      const res = await window.osl.invoke(ch, p)
+      if (!res.ok) throw new Error(`${ch}: ${res.error?.message}`)
+      return res.data
+    }
+    const people = await inv('people:list', undefined)
+    const kid = people.find((p) => p.name === 'Test Kid')
+    if (!kid) throw new Error('Test Kid missing')
+    const today = new Date().toISOString().slice(0, 10)
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+
+    const recipe = await inv('recipes:create', { title: 'Smoke Tacos', ingredients: ['Tortillas', 'Cheese'] })
+    await inv('meals:set', { date: today, slot: 'dinner', text: null, recipeId: recipe.id, personIds: [kid.id] })
+    const day = await inv('meals:getRange', { start: today, end: today })
+    const meal = day.find((m) => m.slot === 'dinner')
+    if (!meal || meal.text !== 'Smoke Tacos' || meal.personIds[0] !== kid.id) throw new Error('recipe meal not linked/assigned')
+
+    // drag-drop move to tomorrow (swap semantics covered in unit tests)
+    await inv('meals:move', { id: meal.id, date: tomorrow, slot: 'dinner' })
+    const moved = await inv('meals:getRange', { start: tomorrow, end: tomorrow })
+    if (moved.find((m) => m.slot === 'dinner')?.text !== 'Smoke Tacos') throw new Error('meal did not move')
+
+    // ingredients land on a grocery list
+    const { added } = await inv('meals:addIngredients', { mealSlotId: meal.id })
+    if (added !== 2) throw new Error(`expected 2 ingredients added, got ${added}`)
+    const lists = await inv('lists:getAll', undefined)
+    const groceries = lists.find((l) => l.kind === 'grocery')
+    if (!groceries?.items.some((i) => i.text === 'Tortillas')) throw new Error('ingredients not on grocery list')
+  })
+
+  console.log('SMOKE PASS: event, avatar, CalDAV push round-trip, chores grabs/links, and meals recipe/assign/move/ingredients verified')
 } finally {
   await app.close()
   rmSync(userData, { recursive: true, force: true })

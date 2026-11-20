@@ -11,6 +11,7 @@ import { DayView } from './features/calendar/DayView'
 import { MonthView } from './features/calendar/MonthView'
 import { AgendaView } from './features/calendar/AgendaView'
 import { ChoresView } from './features/chores/ChoresView'
+import { TasksView } from './features/chores/TasksView'
 import { ListsView } from './features/lists/ListsView'
 import { EventEditor } from './features/calendar/EventEditor'
 import { SettingsSheet } from './features/settings/SettingsSheet'
@@ -45,9 +46,10 @@ export default function App() {
         {view === 'month' && <MonthView />}
         {view === 'agenda' && <AgendaView />}
         {view === 'chores' && <ChoresView />}
+        {view === 'tasks' && <TasksView />}
         {view === 'lists' && <ListsView />}
       </main>
-      {view !== 'chores' && view !== 'lists' && view !== 'home' && <Fab />}
+      {view !== 'chores' && view !== 'tasks' && view !== 'lists' && view !== 'home' && <Fab />}
       <EventEditor />
       <SettingsSheet />
       <OskTray />

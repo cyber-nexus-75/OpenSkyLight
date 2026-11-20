@@ -146,7 +146,7 @@ export const settingsPatchSchema = z.object({
   patch: z
     .object({
       weekStartsOn: z.union([z.literal(0), z.literal(1)]).optional(),
-      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'lists']).optional(),
+      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'tasks', 'lists']).optional(),
       homeLayout: z.array(homeTileSchema).max(24).optional(),
       timeFormat: z.enum(['12h', '24h']).optional(),
       temperatureUnit: z.enum(['f', 'c']).optional(),
@@ -156,7 +156,8 @@ export const settingsPatchSchema = z.object({
       screensaver: z.object({ folder: z.string().nullable(), idleMinutes: z.number().int().min(1).max(120) }).optional(),
       launchOnStartup: z.boolean().optional(),
       companion: z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65535) }).optional(),
-      syncIntervalMinutes: z.number().int().min(5).max(1440).optional()
+      syncIntervalMinutes: z.number().int().min(5).max(1440).optional(),
+      routinesDisplay: z.enum(['all', 'current']).optional()
     })
     .strict()
 })
@@ -224,30 +225,42 @@ export const caldavCalendarPersonSchema = z.object({
   personId: id.nullable()
 })
 
-const routine = z.enum(['morning', 'evening']).nullable()
+const routine = z.enum(['morning', 'afternoon', 'evening']).nullable()
 
 export const choreCreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
-  personId: id,
+  /** null = up for grabs */
+  personId: id.nullable(),
   starsValue: z.number().int().min(0).max(99),
   recurrence: recurrenceSchema.nullish(),
   anchorDate: isoDate.optional(),
-  routine: routine.optional()
+  routine: routine.optional(),
+  upForGrabs: z.boolean().optional(),
+  repeatAfter: z.boolean().optional(),
+  linkedChoreIds: z.array(id).max(20).optional()
 })
 
 export const choreUpdateSchema = z.object({
   id,
   title: z.string().trim().min(1).max(120).optional(),
-  personId: id.optional(),
+  personId: id.nullable().optional(),
   starsValue: z.number().int().min(0).max(99).optional(),
   recurrence: recurrenceSchema.nullable().optional(),
   anchorDate: isoDate.optional(),
   routine: routine.optional(),
+  upForGrabs: z.boolean().optional(),
+  repeatAfter: z.boolean().optional(),
+  linkedChoreIds: z.array(id).max(20).optional(),
   active: z.boolean().optional()
 })
 
 export const choreDaySchema = z.object({ date: isoDate })
-export const choreCheckSchema = z.object({ choreId: id, date: isoDate })
+export const choreCheckSchema = z.object({
+  choreId: id,
+  date: isoDate,
+  /** claimer for up-for-grabs chores; ignored otherwise */
+  personId: id.optional()
+})
 
 export const rewardCreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -283,7 +296,29 @@ export const mealsRangeSchema = z.object({ start: isoDate, end: isoDate })
 export const mealSetSchema = z.object({
   date: isoDate,
   slot: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
-  text: z.string().trim().max(200).nullable()
+  text: z.string().trim().max(200).nullable(),
+  recipeId: id.nullable().optional(),
+  personIds: z.array(id).max(20).optional()
+})
+export const mealMoveSchema = z.object({
+  id,
+  date: isoDate,
+  slot: z.enum(['breakfast', 'lunch', 'dinner', 'snack'])
+})
+export const mealAddIngredientsSchema = z.object({ mealSlotId: id, listId: id.optional() })
+
+export const recipeCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  ingredients: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  instructions: z.string().max(4000).nullish(),
+  tags: z.array(z.string().trim().min(1).max(30)).max(20).optional()
+})
+export const recipeUpdateSchema = z.object({
+  id,
+  title: z.string().trim().min(1).max(120).optional(),
+  ingredients: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  instructions: z.string().max(4000).nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(30)).max(20).optional()
 })
 
 export const citySearchSchema = z.object({ query: z.string().trim().min(2).max(80) })

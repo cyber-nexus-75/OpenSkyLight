@@ -37,6 +37,10 @@ export function useChores() {
   return useQuery({ queryKey: ['chores'], queryFn: () => rpc('chores:list', undefined), ...LIVE })
 }
 
+export function useChoresTasks(date: string) {
+  return useQuery({ queryKey: ['choresTasks', date], queryFn: () => rpc('chores:getTasks', { date }), ...LIVE })
+}
+
 export function useBalances() {
   return useQuery({ queryKey: ['balances'], queryFn: () => rpc('stars:balances', undefined), ...LIVE })
 }
@@ -78,19 +82,32 @@ export function useListMutations() {
 export function useMealMutations() {
   return {
     set: useInvalidatingMutation(
-      (input: { date: string; slot: 'breakfast' | 'lunch' | 'dinner' | 'snack'; text: string | null }) =>
-        rpc('meals:set', input),
+      (input: Parameters<typeof rpc<'meals:set'>>[1]) => rpc('meals:set', input),
       [['meals']]
+    ),
+    move: useInvalidatingMutation((input: Parameters<typeof rpc<'meals:move'>>[1]) => rpc('meals:move', input), [
+      ['meals']
+    ]),
+    addIngredients: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'meals:addIngredients'>>[1]) => rpc('meals:addIngredients', input),
+      [['meals'], ['lists']]
     )
   }
 }
 
+export function useRecipes() {
+  return useQuery({ queryKey: ['recipes'], queryFn: () => rpc('recipes:list', undefined), ...LIVE })
+}
+
 export function useChoreMutations() {
-  const keys = [['choresDay'], ['chores'], ['balances']]
+  const keys = [['choresDay'], ['choresTasks'], ['chores'], ['balances']]
   return {
     create: useInvalidatingMutation((input: ChoreCreateInput) => rpc('chores:create', input), keys),
     update: useInvalidatingMutation((input: ChoreUpdateInput) => rpc('chores:update', input), keys),
-    complete: useInvalidatingMutation((input: { choreId: string; date: string }) => rpc('chores:complete', input), keys),
+    complete: useInvalidatingMutation(
+      (input: { choreId: string; date: string; personId?: string }) => rpc('chores:complete', input),
+      keys
+    ),
     uncomplete: useInvalidatingMutation(
       (input: { choreId: string; date: string }) => rpc('chores:uncomplete', input),
       keys

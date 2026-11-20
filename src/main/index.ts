@@ -82,6 +82,7 @@ if (!gotLock) {
     })
     app.on('will-quit', () => cameraService.shutdown())
     const choresService = createChoresService(db, deviceTz)
+    const listsService = createListsService(db)
     const googleAuth = createGoogleAuth(db, settings)
     const googleSync = createGoogleSync({ db, auth: googleAuth, deviceTz })
     const caldavAuth = createCalDavAuth({ db, settings })
@@ -135,8 +136,8 @@ if (!gotLock) {
       auth: createAuthService(settings),
       chores: choresService,
       rewards: createRewardsService(db, choresService),
-      lists: createListsService(db),
-      meals: createMealsService(db),
+      lists: listsService,
+      meals: createMealsService(db, listsService),
       kiosk,
       updater,
       rss: createRssService(),

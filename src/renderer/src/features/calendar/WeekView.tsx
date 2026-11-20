@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
 import { eachDay } from '@shared/dates'
-import { useSettings } from '../../api/hooks'
+import { useMealMutations, useSettings } from '../../api/hooks'
 import { useUi, ZONE } from '../../stores/uiStore'
 import { occurrenceColor } from '../../lib/colors'
 import { isToday } from '../../lib/format'
@@ -19,6 +19,7 @@ export function WeekView() {
   const timeFormat = settings?.timeFormat ?? '12h'
   const days = eachDay(range, ZONE)
   const mealsByDay = useMealsForRange(range)
+  const mealMutations = useMealMutations()
   const [mealDate, setMealDate] = useState<string | null>(null)
 
   return (
@@ -75,7 +76,12 @@ export function WeekView() {
               )}
             </div>
             <div className="mt-2">
-              <MealStrip date={key} meals={mealsByDay.get(key) ?? []} onOpen={setMealDate} />
+              <MealStrip
+                date={key}
+                meals={mealsByDay.get(key) ?? []}
+                onOpen={setMealDate}
+                onMove={(id, date, slot) => mealMutations.move.mutate({ id, date, slot })}
+              />
             </div>
           </div>
         )

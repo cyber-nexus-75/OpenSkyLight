@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
-import { MEAL_SLOTS, type MealSlotKind } from '@shared/types'
-import { useMealMutations, useMeals } from '../api/hooks'
-import { Card, PrimaryButton, TextInput } from '../components/ui'
+import { MEAL_SLOTS, type MealSlotDto, type MealSlotKind } from '@shared/types'
+import { useLists, useMealMutations, useMeals, usePeople, useRecipes } from '../api/hooks'
+import { Card, GhostButton, PersonAvatar, PrimaryButton, TextInput } from '../components/ui'
 
 const SLOT_COLORS: Record<MealSlotKind, string> = {
   breakfast: '#FFB224',
@@ -11,23 +11,42 @@ const SLOT_COLORS: Record<MealSlotKind, string> = {
   snack: '#6E56CF'
 }
 
+interface Editing {
+  date: string
+  slot: MealSlotKind
+  text: string
+  recipeId: string | null
+  personIds: string[]
+}
+
 export function MealsPage() {
   const today = DateTime.now().startOf('day')
   const start = today.toISODate()!
   const end = today.plus({ days: 6 }).toISODate()!
   const { data: meals = [] } = useMeals(start, end)
+  const { data: recipes = [] } = useRecipes()
+  const { data: people = [] } = usePeople()
+  const { data: lists = [] } = useLists()
   const mutations = useMealMutations()
-  const [editing, setEditing] = useState<{ date: string; slot: MealSlotKind; text: string } | null>(null)
+  const [editing, setEditing] = useState<Editing | null>(null)
 
-  const mealFor = (date: string, slot: MealSlotKind): string | null =>
-    meals.find((m) => m.date === date && m.slot === slot)?.text ?? null
+  const mealFor = (date: string, slot: MealSlotKind): MealSlotDto | null =>
+    meals.find((m) => m.date === date && m.slot === slot) ?? null
 
   const save = (): void => {
     if (!editing) return
     const text = editing.text.trim()
-    mutations.set.mutate({ date: editing.date, slot: editing.slot, text: text === '' ? null : text })
+    mutations.set.mutate({
+      date: editing.date,
+      slot: editing.slot,
+      text: text === '' ? null : text,
+      recipeId: editing.recipeId,
+      personIds: editing.personIds
+    })
     setEditing(null)
   }
+
+  const groceryList = lists.find((l) => l.kind === 'grocery') ?? lists[0]
 
   return (
     <div className="flex flex-col gap-4">
@@ -41,7 +60,7 @@ export function MealsPage() {
               <span className="ml-2 text-base font-bold text-ink-faint">{day.toFormat('LLL d')}</span>
             </h2>
             {MEAL_SLOTS.map((slot) => {
-              const text = mealFor(date, slot)
+              const meal = mealFor(date, slot)
               const isEditing = editing?.date === date && editing.slot === slot
               return (
                 <div key={slot} className="flex min-h-11 items-center gap-3 border-b border-line/60 last:border-0">
@@ -51,9 +70,9 @@ export function MealsPage() {
                   >
                     {slot}
                   </span>
-                  {isEditing ? (
+                  {isEditing && editing ? (
                     <form
-                      className="flex min-w-0 flex-1 gap-2 py-1"
+                      className="flex min-w-0 flex-1 flex-col gap-2 py-1"
                       onSubmit={(e) => {
                         e.preventDefault()
                         save()
@@ -65,16 +84,78 @@ export function MealsPage() {
                         placeholder="What's cooking?"
                         autoFocus
                       />
-                      <PrimaryButton type="submit">Save</PrimaryButton>
+                      <select
+                        value={editing.recipeId ?? ''}
+                        onChange={(e) => setEditing({ ...editing, recipeId: e.target.value || null })}
+                        className="min-h-11 rounded-xl bg-paper-deep px-2 text-sm font-bold"
+                        aria-label="Recipe"
+                      >
+                        <option value="">— free text —</option>
+                        {recipes.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.title}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex flex-wrap gap-1.5">
+                        {people.map((p) => {
+                          const on = editing.personIds.includes(p.id)
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() =>
+                                setEditing({
+                                  ...editing,
+                                  personIds: on
+                                    ? editing.personIds.filter((id) => id !== p.id)
+                                    : [...editing.personIds, p.id]
+                                })
+                              }
+                              className={`pressable flex items-center gap-1 rounded-full py-0.5 pr-2 pl-0.5 text-xs font-extrabold ${
+                                on ? 'bg-ember text-white' : 'bg-paper-deep text-ink-soft'
+                              }`}
+                            >
+                              <PersonAvatar name={p.name} color={p.color} avatarUrl={p.avatarUrl} size="sm" />
+                              {p.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="flex gap-2">
+                        <PrimaryButton type="submit">Save</PrimaryButton>
+                        <GhostButton onClick={() => setEditing(null)}>Cancel</GhostButton>
+                      </div>
                     </form>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setEditing({ date, slot, text: text ?? '' })}
+                      onClick={() =>
+                        setEditing({
+                          date,
+                          slot,
+                          text: meal?.text ?? '',
+                          recipeId: meal?.recipeId ?? null,
+                          personIds: meal?.personIds ?? []
+                        })
+                      }
                       className="pressable min-w-0 flex-1 py-2 text-left text-base font-semibold"
                     >
-                      {text ?? <span className="text-ink-faint">Add…</span>}
+                      {meal?.text ?? <span className="text-ink-faint">Add…</span>}
                     </button>
+                  )}
+                  {!isEditing && meal?.personIds.map((pid) => {
+                    const p = people.find((x) => x.id === pid)
+                    return p ? (
+                      <PersonAvatar key={pid} name={p.name} color={p.color} avatarUrl={p.avatarUrl} size="sm" />
+                    ) : null
+                  })}
+                  {!isEditing && meal?.recipeId && groceryList && (
+                    <GhostButton
+                      onClick={() => mutations.addIngredients.mutate({ mealSlotId: meal.id, listId: groceryList.id })}
+                    >
+                      ＋ list
+                    </GhostButton>
                   )}
                 </div>
               )
