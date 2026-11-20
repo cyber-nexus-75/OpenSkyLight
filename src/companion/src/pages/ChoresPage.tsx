@@ -26,18 +26,76 @@ export function ChoresPage() {
   }
   const [showForm, setShowForm] = useState(false)
   const [showManage, setShowManage] = useState(false)
+  const [claimerFor, setClaimerFor] = useState<string | null>(null)
 
   const balanceOf = (personId: string): number => balances.find((b) => b.personId === personId)?.balance ?? 0
+  const grabs = dayChores.filter((c) => c.upForGrabs)
 
   return (
     <div className="flex flex-col gap-4">
       {isPending && <EmptyNote>Loading…</EmptyNote>}
       {!isPending && dayChores.length === 0 && <EmptyNote>No chores today.</EmptyNote>}
 
+      {grabs.length > 0 && (
+        <Card>
+          <h2 className="mb-1 font-display text-xl font-semibold">Up for grabs</h2>
+          {grabs.map((chore) => (
+            <div key={chore.choreId}>
+              <div className="flex items-center border-b border-line/60 last:border-0">
+                <CheckCircle
+                  checked={chore.completed}
+                  color="#8E4EC6"
+                  onTap={() => {
+                    if (chore.completed) mutations.uncomplete.mutate({ choreId: chore.choreId, date: today })
+                    else setClaimerFor(claimerFor === chore.choreId ? null : chore.choreId)
+                  }}
+                  label={`${chore.completed ? 'Uncheck' : 'Claim'} ${chore.title}`}
+                />
+                <span
+                  className={`min-w-0 flex-1 truncate py-2 text-base font-semibold ${chore.completed ? 'text-ink-faint line-through' : ''}`}
+                >
+                  {chore.title}
+                </span>
+                {chore.claimerId && (
+                  <PersonAvatar
+                    name={people.find((p) => p.id === chore.claimerId)?.name ?? '?'}
+                    color={people.find((p) => p.id === chore.claimerId)?.color ?? '#999'}
+                    avatarUrl={people.find((p) => p.id === chore.claimerId)?.avatarUrl ?? null}
+                    size="sm"
+                  />
+                )}
+                {chore.starsValue > 0 && (
+                  <span className="shrink-0 pl-2 text-sm font-extrabold text-ink-faint">★ {chore.starsValue}</span>
+                )}
+              </div>
+              {claimerFor === chore.choreId && !chore.completed && (
+                <div className="flex flex-wrap gap-2 border-b border-line/60 py-2 last:border-0">
+                  <span className="w-full px-1 text-xs font-extrabold text-ink-faint uppercase">Who did it?</span>
+                  {people.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        mutations.complete.mutate({ choreId: chore.choreId, date: today, personId: p.id })
+                        setClaimerFor(null)
+                      }}
+                      className="pressable flex items-center gap-1.5 rounded-full bg-paper-deep py-1 pr-3 pl-1"
+                    >
+                      <PersonAvatar name={p.name} color={p.color} avatarUrl={p.avatarUrl} size="sm" />
+                      <span className="text-sm font-bold">{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </Card>
+      )}
+
       {people
-        .filter((p) => dayChores.some((c) => c.personId === p.id))
+        .filter((p) => dayChores.some((c) => !c.upForGrabs && c.personId === p.id))
         .map((person) => {
-          const theirs = dayChores.filter((c) => c.personId === person.id)
+          const theirs = dayChores.filter((c) => !c.upForGrabs && c.personId === person.id)
           const done = theirs.filter((c) => c.completed).length
           return (
             <Card key={person.id}>
@@ -230,6 +288,7 @@ function ManageChores({ people }: { people: PersonDto[] }) {
 }
 
 function ManageChoreRow({ chore, person }: { chore: ChoreDto; person: PersonDto | undefined }) {
+  // person is undefined for up-for-grabs chores
   const mutations = useChoreMutations()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(chore.title)

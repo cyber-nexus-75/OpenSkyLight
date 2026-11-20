@@ -152,7 +152,30 @@ try {
   if (!pushedIcs.includes('SUMMARY:Pushed to Nextcloud')) throw new Error('pushed event missing SUMMARY')
   stub.close()
 
-  console.log('SMOKE PASS: event, avatar, and CalDAV push round-trip verified')
+  // M7 chores: up-for-grabs claim + linked completion + tasks view, through the real IPC layer
+  await page.evaluate(async () => {
+    const inv = async (ch, p) => {
+      const res = await window.osl.invoke(ch, p)
+      if (!res.ok) throw new Error(`${ch}: ${res.error?.message}`)
+      return res.data
+    }
+    const people = await inv('people:list', undefined)
+    const kid = people.find((p) => p.name === 'Test Kid')
+    if (!kid) throw new Error('Test Kid missing')
+    const today = new Date().toISOString().slice(0, 10)
+    const grab = await inv('chores:create', {
+      title: 'Smoke grab', personId: null, starsValue: 2,
+      recurrence: { freq: 'daily' }, upForGrabs: true, anchorDate: today
+    })
+    await inv('chores:complete', { choreId: grab.id, date: today, personId: kid.id })
+    const linked = await inv('chores:create', { title: 'Smoke pair', personId: kid.id, starsValue: 1, recurrence: { freq: 'daily' } })
+    await inv('chores:update', { id: linked.id, linkedChoreIds: [grab.id] })
+    const tasks = await inv('chores:getTasks', { date: today })
+    const grabTask = tasks.find((t) => t.choreId === grab.id)
+    if (!grabTask?.completedToday || grabTask.claimerId !== kid.id) throw new Error('grab claim not reflected in tasks')
+  })
+
+  console.log('SMOKE PASS: event, avatar, CalDAV push round-trip, and chores grabs/links verified')
 } finally {
   await app.close()
   rmSync(userData, { recursive: true, force: true })

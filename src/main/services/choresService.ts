@@ -1,62 +1,106 @@
-import { and, asc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull, or } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import type { AppDb } from '../db/client'
-import { choreCompletions, chores, starLedger } from '../db/schema'
+import { choreCompletions, choreLinks, chores, starLedger } from '../db/schema'
 import { uuidv7 } from '@shared/uuid'
 import { isoUtc } from '@shared/dates'
 import { buildRRuleString, parseRRuleString } from '@shared/recurrence/build'
 import { expandOccurrences } from '@shared/recurrence/expand'
-import type { ChoreCreateInput, ChoreDto, ChoreUpdateInput, DayChoreDto, StarBalanceDto } from '@shared/types'
-import { notFound } from './errors'
+import type {
+  ChoreCreateInput,
+  ChoreDto,
+  ChoreUpdateInput,
+  DayChoreDto,
+  StarBalanceDto,
+  TaskItemDto
+} from '@shared/types'
+import { invalid, notFound } from './errors'
 
 type ChoreRow = typeof chores.$inferSelect
+type Tx = Parameters<Parameters<AppDb['transaction']>[0]>[0]
 
 export function createChoresService(db: AppDb, deviceTz: () => string) {
-  function toDto(row: ChoreRow): ChoreDto {
+  function linksFor(choreId: string, linkRows: (typeof choreLinks.$inferSelect)[]): string[] {
+    const ids = new Set<string>()
+    for (const l of linkRows) {
+      if (l.choreId === choreId) ids.add(l.linkedChoreId)
+      else if (l.linkedChoreId === choreId) ids.add(l.choreId)
+    }
+    ids.delete(choreId)
+    return [...ids]
+  }
+
+  function toDto(row: ChoreRow, linkRows: (typeof choreLinks.$inferSelect)[]): ChoreDto {
     const zone = deviceTz()
     return {
       id: row.id,
       title: row.title,
       icon: row.icon,
-      personId: row.personId!,
+      personId: row.personId,
       starsValue: row.starsValue,
       recurrence: row.scheduleRrule ? parseRRuleString(row.scheduleRrule, zone) : null,
       anchorDate: row.dueDate ?? DateTime.fromISO(row.createdAt).setZone(zone).toISODate()!,
       routine: row.routine,
+      upForGrabs: row.upForGrabs,
+      repeatAfter: row.repeatAfter,
+      linkedChoreIds: linksFor(row.id, linkRows),
       active: row.active,
       sortOrder: row.sortOrder
     }
   }
 
+  /** Replace the symmetric link set of a chore (stored in both directions). */
+  function setLinks(tx: Tx, choreId: string, linkedIds: string[]): void {
+    tx.delete(choreLinks).where(or(eq(choreLinks.choreId, choreId), eq(choreLinks.linkedChoreId, choreId))).run()
+    const unique = [...new Set(linkedIds.filter((id) => id !== choreId))]
+    const now = isoUtc(DateTime.utc())
+    for (const other of unique) {
+      tx.insert(choreLinks).values({ id: uuidv7(), choreId, linkedChoreId: other, createdAt: now }).run()
+      tx.insert(choreLinks).values({ id: uuidv7(), choreId: other, linkedChoreId: choreId, createdAt: now }).run()
+    }
+  }
+
+  function allLinks(): (typeof choreLinks.$inferSelect)[] {
+    return db.select().from(choreLinks).all()
+  }
+
   function list(): ChoreDto[] {
+    const linkRows = allLinks()
     return db
       .select()
       .from(chores)
       .where(isNull(chores.deletedAt))
       .orderBy(asc(chores.sortOrder), asc(chores.createdAt))
       .all()
-      .map(toDto)
+      .map((row) => toDto(row, linkRows))
   }
 
   function create(input: ChoreCreateInput): ChoreDto {
     const zone = deviceTz()
     const anchor = input.anchorDate ?? DateTime.now().setZone(zone).toISODate()!
+    const upForGrabs = input.upForGrabs ?? false
+    if (!upForGrabs && !input.personId) throw invalid('Chore needs a person (or mark it up for grabs)')
     const id = uuidv7()
-    db.insert(chores)
-      .values({
-        id,
-        title: input.title,
-        personId: input.personId,
-        starsValue: input.starsValue,
-        scheduleRrule: input.recurrence ? buildRRuleString(input.recurrence, zone) : null,
-        dueDate: anchor,
-        routine: input.routine ?? null,
-        active: true,
-        createdAt: isoUtc(DateTime.utc())
-      })
-      .run()
+    db.transaction((tx) => {
+      tx.insert(chores)
+        .values({
+          id,
+          title: input.title,
+          personId: upForGrabs ? null : input.personId,
+          starsValue: input.starsValue,
+          scheduleRrule: input.recurrence ? buildRRuleString(input.recurrence, zone) : null,
+          dueDate: anchor,
+          routine: input.routine ?? null,
+          upForGrabs,
+          repeatAfter: input.repeatAfter ?? false,
+          active: true,
+          createdAt: isoUtc(DateTime.utc())
+        })
+        .run()
+      if (input.linkedChoreIds?.length) setLinks(tx, id, input.linkedChoreIds)
+    })
     const [row] = db.select().from(chores).where(eq(chores.id, id)).all()
-    return toDto(row)
+    return toDto(row, allLinks())
   }
 
   function update(input: ChoreUpdateInput): ChoreDto {
@@ -70,15 +114,28 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
     }
     if (input.anchorDate !== undefined) patch.dueDate = input.anchorDate
     if (input.routine !== undefined) patch.routine = input.routine
+    if (input.upForGrabs !== undefined) {
+      patch.upForGrabs = input.upForGrabs
+      if (input.upForGrabs) patch.personId = null
+    }
+    if (input.repeatAfter !== undefined) patch.repeatAfter = input.repeatAfter
     if (input.active !== undefined) patch.active = input.active
-    const result = db
-      .update(chores)
-      .set(patch)
-      .where(and(eq(chores.id, input.id), isNull(chores.deletedAt)))
-      .run()
-    if (result.changes === 0) throw notFound('Chore')
+    if (Object.keys(patch).length > 0) {
+      const result = db
+        .update(chores)
+        .set(patch)
+        .where(and(eq(chores.id, input.id), isNull(chores.deletedAt)))
+        .run()
+      if (result.changes === 0) throw notFound('Chore')
+    } else {
+      const [row] = db.select().from(chores).where(and(eq(chores.id, input.id), isNull(chores.deletedAt))).all()
+      if (!row) throw notFound('Chore')
+    }
+    if (input.linkedChoreIds !== undefined) {
+      db.transaction((tx) => setLinks(tx, input.id, input.linkedChoreIds!))
+    }
     const [row] = db.select().from(chores).where(eq(chores.id, input.id)).all()
-    return toDto(row)
+    return toDto(row, allLinks())
   }
 
   function remove(id: string): void {
@@ -88,13 +145,14 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
       .where(and(eq(chores.id, id), isNull(chores.deletedAt)))
       .run()
     if (result.changes === 0) throw notFound('Chore')
+    db.delete(choreLinks).where(or(eq(choreLinks.choreId, id), eq(choreLinks.linkedChoreId, id))).run()
   }
 
   /** Is this chore due on the given local calendar date? */
   function isDueOn(row: ChoreRow, date: string): boolean {
     const zone = deviceTz()
     const anchor = row.dueDate ?? DateTime.fromISO(row.createdAt).setZone(zone).toISODate()!
-    if (!row.scheduleRrule) return anchor === date
+    if (!row.scheduleRrule) return row.repeatAfter ? date >= anchor : anchor === date
     if (date < anchor) return false
     const dayStart = DateTime.fromISO(date, { zone }).startOf('day')
     const occurrences = expandOccurrences(
@@ -115,6 +173,14 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
     return occurrences.some((o) => DateTime.fromISO(o.start, { zone: 'utc' }).setZone(zone).toISODate() === date)
   }
 
+  function completionsOn(date: string): Map<string, typeof choreCompletions.$inferSelect> {
+    const map = new Map<string, typeof choreCompletions.$inferSelect>()
+    for (const c of db.select().from(choreCompletions).where(eq(choreCompletions.dueDate, date)).all()) {
+      map.set(c.choreId, c)
+    }
+    return map
+  }
+
   function getDay(date: string): DayChoreDto[] {
     const rows = db
       .select()
@@ -122,22 +188,59 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
       .where(and(isNull(chores.deletedAt), eq(chores.active, true)))
       .orderBy(asc(chores.sortOrder), asc(chores.createdAt))
       .all()
-    const done = new Set(
-      db.select().from(choreCompletions).where(eq(choreCompletions.dueDate, date)).all().map((c) => c.choreId)
-    )
-    const routineOrder = { morning: 0, null: 1, evening: 2 } as Record<string, number>
+    const done = completionsOn(date)
+    const routineOrder = { morning: 0, afternoon: 1, null: 2, evening: 3 } as Record<string, number>
     return rows
-      .filter((row) => row.personId && isDueOn(row, date))
-      .map((row) => ({
+      .filter((row) => (row.personId || row.upForGrabs) && isDueOn(row, date))
+      .map((row) => {
+        const completion = done.get(row.id)
+        return {
+          choreId: row.id,
+          title: row.title,
+          icon: row.icon,
+          personId: row.personId,
+          upForGrabs: row.upForGrabs,
+          claimerId: row.upForGrabs ? (completion?.personId ?? null) : null,
+          starsValue: row.starsValue,
+          routine: row.routine,
+          completed: completion !== undefined
+        }
+      })
+      .sort((a, b) => routineOrder[String(a.routine)] - routineOrder[String(b.routine)])
+  }
+
+  /** All active chores with today/overdue state — the all-tasks view's data. */
+  function getTasks(date: string): TaskItemDto[] {
+    const zone = deviceTz()
+    const rows = db
+      .select()
+      .from(chores)
+      .where(and(isNull(chores.deletedAt), eq(chores.active, true)))
+      .orderBy(asc(chores.sortOrder), asc(chores.createdAt))
+      .all()
+    const done = completionsOn(date)
+    const completionsAll = db.select().from(choreCompletions).all()
+    const completedAnchors = new Set(completionsAll.map((c) => `${c.choreId}|${c.dueDate}`))
+    return rows.map((row) => {
+      const anchor = row.dueDate ?? DateTime.fromISO(row.createdAt).setZone(zone).toISODate()!
+      const completion = done.get(row.id)
+      const overdue = !row.scheduleRrule && !row.repeatAfter && anchor < date && !completedAnchors.has(`${row.id}|${anchor}`)
+      return {
         choreId: row.id,
         title: row.title,
         icon: row.icon,
-        personId: row.personId!,
+        personId: row.personId,
+        upForGrabs: row.upForGrabs,
+        claimerId: row.upForGrabs ? (completion?.personId ?? null) : null,
         starsValue: row.starsValue,
         routine: row.routine,
-        completed: done.has(row.id)
-      }))
-      .sort((a, b) => routineOrder[String(a.routine)] - routineOrder[String(b.routine)])
+        recurrence: row.scheduleRrule ? parseRRuleString(row.scheduleRrule, zone) : null,
+        anchorDate: anchor,
+        dueToday: isDueOn(row, date),
+        completedToday: completion !== undefined,
+        overdue
+      }
+    })
   }
 
   function balanceOf(personId: string): number {
@@ -153,63 +256,88 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
     return [...totals.entries()].map(([personId, balance]) => ({ personId, balance }))
   }
 
-  function complete(choreId: string, date: string): { balance: number } {
-    const [chore] = db.select().from(chores).where(and(eq(chores.id, choreId), isNull(chores.deletedAt))).all()
-    if (!chore || !chore.personId) throw notFound('Chore')
-    const [existing] = db
+  function linkedChoreIds(choreId: string): string[] {
+    const linkRows = db
+      .select()
+      .from(choreLinks)
+      .where(or(eq(choreLinks.choreId, choreId), eq(choreLinks.linkedChoreId, choreId)))
+      .all()
+    return linksFor(choreId, linkRows)
+  }
+
+  /** Insert a completion + star ledger row inside an existing transaction. */
+  function recordCompletion(tx: Tx, chore: ChoreRow, personId: string, date: string): void {
+    const existing = tx
       .select()
       .from(choreCompletions)
-      .where(and(eq(choreCompletions.choreId, choreId), eq(choreCompletions.dueDate, date)))
+      .where(and(eq(choreCompletions.choreId, chore.id), eq(choreCompletions.dueDate, date)))
       .all()
-    if (!existing) {
-      const completionId = uuidv7()
-      const now = isoUtc(DateTime.utc())
-      db.transaction((tx) => {
-        tx.insert(choreCompletions)
-          .values({
-            id: completionId,
-            choreId,
-            personId: chore.personId!,
-            dueDate: date,
-            completedAt: now,
-            starsAwarded: chore.starsValue
-          })
-          .run()
-        if (chore.starsValue > 0) {
-          tx.insert(starLedger)
-            .values({
-              id: uuidv7(),
-              personId: chore.personId!,
-              delta: chore.starsValue,
-              reason: 'chore',
-              refId: completionId,
-              createdAt: now
-            })
-            .run()
-        }
+    if (existing.length > 0) return
+    const completionId = uuidv7()
+    const now = isoUtc(DateTime.utc())
+    tx.insert(choreCompletions)
+      .values({
+        id: completionId,
+        choreId: chore.id,
+        personId,
+        dueDate: date,
+        completedAt: now,
+        starsAwarded: chore.starsValue
       })
+      .run()
+    if (chore.starsValue > 0) {
+      tx.insert(starLedger)
+        .values({ id: uuidv7(), personId, delta: chore.starsValue, reason: 'chore', refId: completionId, createdAt: now })
+        .run()
     }
-    return { balance: balanceOf(chore.personId) }
+  }
+
+  function complete(choreId: string, date: string, claimerId?: string): { balance: number } {
+    const [chore] = db.select().from(chores).where(and(eq(chores.id, choreId), isNull(chores.deletedAt))).all()
+    if (!chore) throw notFound('Chore')
+    const personId = chore.upForGrabs ? claimerId : chore.personId
+    if (!personId) throw invalid(chore.upForGrabs ? 'Pick who grabbed this chore' : 'Chore has no person')
+    db.transaction((tx) => {
+      recordCompletion(tx, chore, personId, date)
+      // linked chores complete together with this one
+      for (const otherId of linkedChoreIds(choreId)) {
+        const [other] = tx.select().from(chores).where(and(eq(chores.id, otherId), isNull(chores.deletedAt))).all()
+        if (other && isDueOn(other, date)) recordCompletion(tx, other, personId, date)
+      }
+    })
+    return { balance: balanceOf(personId) }
   }
 
   function uncomplete(choreId: string, date: string): { balance: number } {
     const [chore] = db.select().from(chores).where(eq(chores.id, choreId)).all()
-    if (!chore || !chore.personId) throw notFound('Chore')
+    if (!chore) throw notFound('Chore')
     const [completion] = db
       .select()
       .from(choreCompletions)
       .where(and(eq(choreCompletions.choreId, choreId), eq(choreCompletions.dueDate, date)))
       .all()
-    if (completion) {
-      db.transaction((tx) => {
+    const personId = completion?.personId ?? chore.personId
+    db.transaction((tx) => {
+      if (completion) {
         tx.delete(starLedger).where(eq(starLedger.refId, completion.id)).run()
         tx.delete(choreCompletions).where(eq(choreCompletions.id, completion.id)).run()
-      })
-    }
-    return { balance: balanceOf(chore.personId) }
+      }
+      for (const otherId of linkedChoreIds(choreId)) {
+        const [linkCompletion] = tx
+          .select()
+          .from(choreCompletions)
+          .where(and(eq(choreCompletions.choreId, otherId), eq(choreCompletions.dueDate, date)))
+          .all()
+        if (linkCompletion) {
+          tx.delete(starLedger).where(eq(starLedger.refId, linkCompletion.id)).run()
+          tx.delete(choreCompletions).where(eq(choreCompletions.id, linkCompletion.id)).run()
+        }
+      }
+    })
+    return { balance: personId ? balanceOf(personId) : 0 }
   }
 
-  return { list, create, update, remove, getDay, complete, uncomplete, balances, balanceOf }
+  return { list, create, update, remove, getDay, getTasks, complete, uncomplete, balances, balanceOf }
 }
 
 export type ChoresService = ReturnType<typeof createChoresService>

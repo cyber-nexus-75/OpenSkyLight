@@ -24,7 +24,8 @@ import type {
   PersonUpdateInput,
   RedemptionDto,
   RewardDto,
-  StarBalanceDto
+  StarBalanceDto,
+  TaskItemDto
 } from '../types'
 
 /**
@@ -129,7 +130,11 @@ export type IpcContract = {
   'chores:update': { req: ChoreUpdateInput; res: ChoreDto }
   'chores:delete': { req: { id: string }; res: void }
   'chores:getDay': { req: { date: string }; res: DayChoreDto[] }
-  'chores:complete': { req: { choreId: string; date: string }; res: { balance: number } }
+  'chores:getTasks': { req: { date: string }; res: TaskItemDto[] }
+  'chores:complete': {
+    req: { choreId: string; date: string; /** claimer for up-for-grabs chores */ personId?: string }
+    res: { balance: number }
+  }
   'chores:uncomplete': { req: { choreId: string; date: string }; res: { balance: number } }
 
   'stars:balances': { req: void; res: StarBalanceDto[] }
