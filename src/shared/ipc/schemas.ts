@@ -296,7 +296,29 @@ export const mealsRangeSchema = z.object({ start: isoDate, end: isoDate })
 export const mealSetSchema = z.object({
   date: isoDate,
   slot: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
-  text: z.string().trim().max(200).nullable()
+  text: z.string().trim().max(200).nullable(),
+  recipeId: id.nullable().optional(),
+  personIds: z.array(id).max(20).optional()
+})
+export const mealMoveSchema = z.object({
+  id,
+  date: isoDate,
+  slot: z.enum(['breakfast', 'lunch', 'dinner', 'snack'])
+})
+export const mealAddIngredientsSchema = z.object({ mealSlotId: id, listId: id.optional() })
+
+export const recipeCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  ingredients: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  instructions: z.string().max(4000).nullish(),
+  tags: z.array(z.string().trim().min(1).max(30)).max(20).optional()
+})
+export const recipeUpdateSchema = z.object({
+  id,
+  title: z.string().trim().min(1).max(120).optional(),
+  ingredients: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  instructions: z.string().max(4000).nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(30)).max(20).optional()
 })
 
 export const citySearchSchema = z.object({ query: z.string().trim().min(2).max(80) })

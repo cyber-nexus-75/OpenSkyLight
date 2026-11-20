@@ -236,11 +236,40 @@ export type MealSlotKind = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export const MEAL_SLOTS: MealSlotKind[] = ['breakfast', 'lunch', 'dinner', 'snack']
 
+export interface RecipeDto {
+  id: string
+  title: string
+  ingredients: string[]
+  instructions: string | null
+  tags: string[]
+}
+
+export interface RecipeCreateInput {
+  title: string
+  ingredients?: string[]
+  instructions?: string | null
+  tags?: string[]
+}
+
+export interface RecipeUpdateInput {
+  id: string
+  title?: string
+  ingredients?: string[]
+  instructions?: string | null
+  tags?: string[]
+}
+
 export interface MealSlotDto {
+  id: string
   /** YYYY-MM-DD */
   date: string
   slot: MealSlotKind
+  /** free text, or the recipe title when linked to a recipe */
   text: string
+  recipeId: string | null
+  /** profiles this meal is assigned to (school lunch, dietary needs) */
+  personIds: string[]
+  sortOrder: number
 }
 
 export type ChoreRoutine = 'morning' | 'afternoon' | 'evening' | null

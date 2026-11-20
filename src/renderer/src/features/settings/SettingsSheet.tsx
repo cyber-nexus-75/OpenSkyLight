@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AiEventDraft, CalendarDto, ChoreDto, PersonDto, PersonRole, RecurrenceInput, RewardDto } from '@shared/types'
+import type { AiEventDraft, CalendarDto, ChoreDto, PersonDto, PersonRole, RecurrenceInput, RecipeDto, RewardDto } from '@shared/types'
 import { PERSON_COLORS } from '@shared/types'
 import { describeRecurrence } from '@shared/recurrence/build'
 import {
@@ -25,6 +25,8 @@ import {
   useIcsMutations,
   usePeople,
   usePeopleMutations,
+  useRecipeMutations,
+  useRecipes,
   useRemoteCalendars,
   useSettings,
   useSettingsMutation,
@@ -44,7 +46,7 @@ import { Avatar } from '../../components/Avatar'
 import { textOn } from '../../lib/format'
 import QRCode from 'qrcode'
 
-type Tab = 'family' | 'calendars' | 'chores' | 'general'
+type Tab = 'family' | 'calendars' | 'chores' | 'meals' | 'general'
 
 export function SettingsSheet() {
   const open = useUi((s) => s.settingsOpen)
@@ -96,6 +98,7 @@ export function SettingsSheet() {
             { value: 'family', label: 'Family' },
             { value: 'calendars', label: 'Calendars' },
             { value: 'chores', label: 'Chores' },
+            { value: 'meals', label: 'Meals' },
             { value: 'general', label: 'General' }
           ]}
         />
@@ -103,6 +106,7 @@ export function SettingsSheet() {
       {tab === 'family' && <FamilyTab />}
       {tab === 'calendars' && <CalendarsTab />}
       {tab === 'chores' && <ChoresTab />}
+      {tab === 'meals' && <MealsTab />}
       {tab === 'general' && <GeneralTab />}
     </Sheet>
   )
@@ -695,6 +699,118 @@ type ScheduleKind = 'daily' | 'weekly' | 'once'
 function scheduleOf(recurrence: RecurrenceInput | null): ScheduleKind {
   if (!recurrence) return 'once'
   return recurrence.freq === 'weekly' ? 'weekly' : 'daily'
+}
+
+function MealsTab() {
+  const { data: recipes = [] } = useRecipes()
+  const recipeMutations = useRecipeMutations()
+  const [editing, setEditing] = useState<RecipeDto | 'new' | null>(null)
+  const [title, setTitle] = useState('')
+  const [ingredients, setIngredients] = useState('')
+  const [instructions, setInstructions] = useState('')
+  const [tags, setTags] = useState('')
+
+  const openEditor = (r: RecipeDto | 'new'): void => {
+    setEditing(r)
+    if (r === 'new') {
+      setTitle('')
+      setIngredients('')
+      setInstructions('')
+      setTags('')
+    } else {
+      setTitle(r.title)
+      setIngredients(r.ingredients.join(', '))
+      setInstructions(r.instructions ?? '')
+      setTags(r.tags.join(', '))
+    }
+  }
+
+  const save = (): void => {
+    if (!title.trim()) return
+    const payload = {
+      title: title.trim(),
+      ingredients: ingredients.split(',').map((s) => s.trim()).filter(Boolean),
+      instructions: instructions.trim() || null,
+      tags: tags.split(',').map((s) => s.trim()).filter(Boolean)
+    }
+    if (editing === 'new') recipeMutations.create.mutate(payload)
+    else if (editing) recipeMutations.update.mutate({ id: editing.id, ...payload })
+    setEditing(null)
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <FieldLabel>Recipes</FieldLabel>
+        <p className="mb-2 text-sm font-semibold text-ink-faint">
+          Link a meal to a recipe to assign it to family members and add its ingredients to a grocery list.
+        </p>
+        <div className="flex flex-col gap-2">
+          {recipes.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => openEditor(r)}
+              className="pressable flex items-center gap-3 rounded-2xl bg-paper-deep/50 p-3 text-left"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-lg font-bold">{r.title}</span>
+                <span className="block text-sm font-bold text-ink-faint">
+                  {r.ingredients.length} ingredients{r.tags.length > 0 ? ` · ${r.tags.join(', ')}` : ''}
+                </span>
+              </span>
+            </button>
+          ))}
+          <BigButton variant="ghost" onClick={() => openEditor('new')}>
+            <span className="flex items-center justify-center gap-2">
+              <PlusIcon size={20} /> Add recipe
+            </span>
+          </BigButton>
+        </div>
+      </div>
+
+      <Dialog open={editing !== null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add recipe' : 'Edit recipe'}>
+        <div className="flex flex-col gap-4">
+          <div>
+            <FieldLabel>Title</FieldLabel>
+            <OskInput value={title} onChange={setTitle} placeholder="e.g. Tacos" autoFocus={editing === 'new'} />
+          </div>
+          <div>
+            <FieldLabel>Ingredients (comma-separated)</FieldLabel>
+            <OskInput value={ingredients} onChange={setIngredients} placeholder="e.g. Tortillas, cheese, salsa" />
+          </div>
+          <div>
+            <FieldLabel>Instructions</FieldLabel>
+            <OskInput value={instructions} onChange={setInstructions} placeholder="Optional" />
+          </div>
+          <div>
+            <FieldLabel>Tags (comma-separated)</FieldLabel>
+            <OskInput value={tags} onChange={setTags} placeholder="e.g. dinner, kid-friendly" />
+          </div>
+          <div className="mt-1 flex gap-3">
+            {editing !== 'new' && editing !== null && (
+              <BigButton
+                variant="danger"
+                onClick={() => {
+                  recipeMutations.remove.mutate({ id: editing.id })
+                  setEditing(null)
+                }}
+              >
+                Delete
+              </BigButton>
+            )}
+            <div className="flex-1" />
+            <BigButton variant="ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </BigButton>
+            <BigButton onClick={save} disabled={!title.trim()}>
+              Save
+            </BigButton>
+          </div>
+        </div>
+      </Dialog>
+    </div>
+  )
 }
 
 function RoutinesDisplaySetting() {

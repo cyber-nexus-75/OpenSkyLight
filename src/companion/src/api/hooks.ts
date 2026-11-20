@@ -82,11 +82,21 @@ export function useListMutations() {
 export function useMealMutations() {
   return {
     set: useInvalidatingMutation(
-      (input: { date: string; slot: 'breakfast' | 'lunch' | 'dinner' | 'snack'; text: string | null }) =>
-        rpc('meals:set', input),
+      (input: Parameters<typeof rpc<'meals:set'>>[1]) => rpc('meals:set', input),
       [['meals']]
+    ),
+    move: useInvalidatingMutation((input: Parameters<typeof rpc<'meals:move'>>[1]) => rpc('meals:move', input), [
+      ['meals']
+    ]),
+    addIngredients: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'meals:addIngredients'>>[1]) => rpc('meals:addIngredients', input),
+      [['meals'], ['lists']]
     )
   }
+}
+
+export function useRecipes() {
+  return useQuery({ queryKey: ['recipes'], queryFn: () => rpc('recipes:list', undefined), ...LIVE })
 }
 
 export function useChoreMutations() {

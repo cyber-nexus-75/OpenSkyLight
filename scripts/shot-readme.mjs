@@ -130,6 +130,14 @@ try {
     await meal(2, 'dinner', 'Pizza Friday')
     await meal(-1, 'dinner', 'Spaghetti')
 
+    // a recipe-linked lunch assigned to Emma (shows the person dot on the meal strip)
+    const tacos = await inv('recipes:create', {
+      title: 'Taco night', ingredients: ['Tortillas', 'Cheese', 'Salsa', 'Ground beef'], tags: ['dinner', 'kid-friendly']
+    })
+    await inv('meals:set', {
+      date: dayIso(new Date()), slot: 'lunch', text: null, recipeId: tacos.id, personIds: [emma.id]
+    })
+
     // avatars so the shots show real photos (solid-color circles generated on canvas)
     const avatar = (person, hex) => {
       const canvas = document.createElement('canvas')

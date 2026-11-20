@@ -222,9 +222,19 @@ export const mealSlots = sqliteTable(
     date: text('date').notNull(),
     slot: text('slot', { enum: ['breakfast', 'lunch', 'dinner', 'snack'] }).notNull(),
     recipeId: text('recipe_id').references(() => recipes.id),
-    freeText: text('free_text')
+    freeText: text('free_text'),
+    sortOrder: integer('sort_order').notNull().default(0)
   },
   (t) => [index('idx_meal_slots_date').on(t.date)]
+)
+
+export const mealSlotPeople = sqliteTable(
+  'meal_slot_people',
+  {
+    mealSlotId: text('meal_slot_id').notNull().references(() => mealSlots.id, { onDelete: 'cascade' }),
+    personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' })
+  },
+  (t) => [primaryKey({ columns: [t.mealSlotId, t.personId] })]
 )
 
 export const settings = sqliteTable('settings', {

@@ -220,6 +220,15 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL,
     UNIQUE (chore_id, linked_chore_id)
   );
+  `,
+  // 004 — meals: per-person assignment, ordering, recipe linkage
+  `
+  ALTER TABLE meal_slots ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE meal_slot_people (
+    meal_slot_id TEXT NOT NULL REFERENCES meal_slots(id) ON DELETE CASCADE,
+    person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+    PRIMARY KEY (meal_slot_id, person_id)
+  );
   `
 ]
 
