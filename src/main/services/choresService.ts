@@ -30,6 +30,28 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
     return [...ids]
   }
 
+
+  /** 2+ ids = rotation chore. null = fixed assignment. */
+  function rotationOf(row: ChoreRow): string[] | null {
+    if (!row.rotationPersonIds) return null
+    try {
+      const parsed = JSON.parse(row.rotationPersonIds) as string[]
+      return Array.isArray(parsed) && parsed.length >= 2 ? parsed : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Who owes this chore on this date: rotation picks by ISO week, else the fixed person. */
+  function assigneeFor(row: ChoreRow, date: string): string | null {
+    const rotation = rotationOf(row)
+    if (rotation) {
+      const week = Math.floor(DateTime.fromISO(date, { zone: deviceTz() }).startOf('week').toMillis() / (7 * 24 * 3600 * 1000))
+      return rotation[Math.abs(week) % rotation.length]!
+    }
+    return row.personId
+  }
+
   function toDto(row: ChoreRow, linkRows: (typeof choreLinks.$inferSelect)[]): ChoreDto {
     const zone = deviceTz()
     return {
@@ -37,6 +59,7 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
       title: row.title,
       icon: row.icon,
       personId: row.personId,
+      rotationPersonIds: rotationOf(row) ?? [],
       starsValue: row.starsValue,
       recurrence: row.scheduleRrule ? parseRRuleString(row.scheduleRrule, zone) : null,
       anchorDate: row.dueDate ?? DateTime.fromISO(row.createdAt).setZone(zone).toISODate()!,
@@ -108,6 +131,10 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
     const patch: Partial<typeof chores.$inferInsert> = {}
     if (input.title !== undefined) patch.title = input.title
     if (input.personId !== undefined) patch.personId = input.personId
+    if (input.rotationPersonIds !== undefined) {
+      patch.rotationPersonIds =
+        input.rotationPersonIds.length >= 2 ? JSON.stringify(input.rotationPersonIds) : null
+    }
     if (input.starsValue !== undefined) patch.starsValue = input.starsValue
     if (input.recurrence !== undefined) {
       patch.scheduleRrule = input.recurrence ? buildRRuleString(input.recurrence, zone) : null
@@ -191,14 +218,14 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
     const done = completionsOn(date)
     const routineOrder = { morning: 0, afternoon: 1, null: 2, evening: 3 } as Record<string, number>
     return rows
-      .filter((row) => (row.personId || row.upForGrabs) && isDueOn(row, date))
+      .filter((row) => (row.upForGrabs || assigneeFor(row, date) !== null) && isDueOn(row, date))
       .map((row) => {
         const completion = done.get(row.id)
         return {
           choreId: row.id,
           title: row.title,
           icon: row.icon,
-          personId: row.personId,
+          personId: row.upForGrabs ? null : assigneeFor(row, date),
           upForGrabs: row.upForGrabs,
           claimerId: row.upForGrabs ? (completion?.personId ?? null) : null,
           starsValue: row.starsValue,
@@ -229,7 +256,7 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
         choreId: row.id,
         title: row.title,
         icon: row.icon,
-        personId: row.personId,
+        personId: row.upForGrabs ? null : assigneeFor(row, date),
         upForGrabs: row.upForGrabs,
         claimerId: row.upForGrabs ? (completion?.personId ?? null) : null,
         starsValue: row.starsValue,
@@ -295,7 +322,7 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
   function complete(choreId: string, date: string, claimerId?: string): { balance: number } {
     const [chore] = db.select().from(chores).where(and(eq(chores.id, choreId), isNull(chores.deletedAt))).all()
     if (!chore) throw notFound('Chore')
-    const personId = chore.upForGrabs ? claimerId : chore.personId
+    const personId = chore.upForGrabs ? claimerId : assigneeFor(chore, date)
     if (!personId) throw invalid(chore.upForGrabs ? 'Pick who grabbed this chore' : 'Chore has no person')
     db.transaction((tx) => {
       recordCompletion(tx, chore, personId, date)
@@ -316,7 +343,7 @@ export function createChoresService(db: AppDb, deviceTz: () => string) {
       .from(choreCompletions)
       .where(and(eq(choreCompletions.choreId, choreId), eq(choreCompletions.dueDate, date)))
       .all()
-    const personId = completion?.personId ?? chore.personId
+    const personId = completion?.personId ?? (chore.upForGrabs ? null : assigneeFor(chore, date))
     db.transaction((tx) => {
       if (completion) {
         tx.delete(starLedger).where(eq(starLedger.refId, completion.id)).run()

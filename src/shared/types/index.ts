@@ -8,6 +8,10 @@ export interface PersonDto {
   sortOrder: number
   /** osl-avatar:// URL, or null when the person has no photo (renderer falls back to initials) */
   avatarUrl: string | null
+  /** birthday as MM-DD; null = not set */
+  birthday: string | null
+  /** birth year for age display; null = hide age */
+  birthYear: number | null
 }
 
 export interface PersonCreateInput {
@@ -22,6 +26,10 @@ export interface PersonUpdateInput {
   color?: string
   role?: PersonRole
   sortOrder?: number
+  /** MM-DD or null to clear; undefined = leave unchanged */
+  birthday?: string | null
+  /** null clears; undefined = leave unchanged */
+  birthYear?: number | null
 }
 
 /** Raw avatar upload: PNG/JPEG image bytes, base64-encoded. Main resizes to 256x256. */
@@ -171,7 +179,7 @@ export interface EventDeleteInput {
   occurrenceStart?: string
 }
 
-export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'tasks' | 'lists'
+export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'tasks' | 'lists' | 'groceries'
 
 export type HomeTileType =
   | 'todayEvents'
@@ -187,6 +195,8 @@ export type HomeTileType =
   | 'camera'
   | 'birdnet'
   | 'timer'
+  | 'birthdays'
+  | 'wallnote'
 
 export interface HomeTileConfig {
   /** 'list' tiles: which list to show */
@@ -236,6 +246,17 @@ export type MealSlotKind = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export const MEAL_SLOTS: MealSlotKind[] = ['breakfast', 'lunch', 'dinner', 'snack']
 
+export interface RecipeDto {
+  id: string
+  title: string
+  /** JSON string[] */
+  ingredients: string[]
+  instructions: string | null
+  tags: string[]
+  /** source URL when imported */
+  sourceUrl: string | null
+}
+
 export interface MealSlotDto {
   /** YYYY-MM-DD */
   date: string
@@ -251,6 +272,8 @@ export interface ChoreDto {
   icon: string | null
   /** null = up for grabs (anyone may claim it) */
   personId: string | null
+  /** 2+ person ids alternating weekly; empty = fixed assignment */
+  rotationPersonIds: string[]
   starsValue: number
   /** null = one-time chore on anchorDate */
   recurrence: RecurrenceInput | null
@@ -271,6 +294,8 @@ export interface ChoreCreateInput {
   title: string
   /** null = up for grabs */
   personId: string | null
+  /** 2+ ids = rotate weekly between these people; omit/empty = fixed personId */
+  rotationPersonIds?: string[]
   starsValue: number
   recurrence?: RecurrenceInput | null
   anchorDate?: string
@@ -284,6 +309,8 @@ export interface ChoreUpdateInput {
   id: string
   title?: string
   personId?: string | null
+  /** empty array clears the rotation; undefined = leave unchanged */
+  rotationPersonIds?: string[]
   starsValue?: number
   recurrence?: RecurrenceInput | null
   anchorDate?: string
@@ -349,6 +376,53 @@ export interface RedemptionDto {
   status: 'pending' | 'granted'
 }
 
+export type PantrySource = 'manual' | 'receipt' | 'voice'
+
+export interface PantryItemDto {
+  id: string
+  name: string
+  category: string | null
+  unit: string | null
+  quantity: number
+  minQuantity: number
+  source: PantrySource
+  updatedAt: string
+  createdAt: string
+}
+
+export interface ShoppingItemDto {
+  id: string
+  name: string
+  quantity: number
+  unit: string | null
+  note: string | null
+  checked: boolean
+  sortOrder: number
+  createdAt: string
+}
+
+export interface ReceiptScanDto {
+  id: string
+  store: string | null
+  total: number | null
+  itemCount: number
+  applied: boolean
+  scannedAt: string
+}
+
+/** One scan's OCR result, returned right after scanning for review before applying. */
+export interface ReceiptScanResultDto {
+  scan: ReceiptScanDto
+  rawText: string
+  parsed: { store: string | null; total: number | null; items: ParsedReceiptItem[] }
+}
+
+export interface GroceriesStateDto {
+  pantry: PantryItemDto[]
+  shopping: ShoppingItemDto[]
+  lowStock: PantryItemDto[]
+}
+
 export interface AppSettings {
   /** 0 = Sunday, 1 = Monday */
   weekStartsOn: 0 | 1
@@ -359,6 +433,8 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'auto'
   weather: { lat: number; lon: number; label: string } | null
   sleep: { enabled: boolean; start: string; end: string }
+  /** dim the screen during these hours (independent of sleep) */
+  nightDimming: { enabled: boolean; start: string; end: string; level: number }
   screensaver: { folder: string | null; idleMinutes: number }
   launchOnStartup: boolean
   homeLayout: HomeTile[]
@@ -368,9 +444,13 @@ export interface AppSettings {
   syncIntervalMinutes: number
   /** chore board: 'all' shows every routine, 'current' only the current part of day */
   routinesDisplay: 'all' | 'current'
+  /** grocery store used for order handoff links (Fry's/Kroger by default) */
+  groceries: { storeBaseUrl: string }
 }
 
 import { DEFAULT_HOME_LAYOUT } from '../home'
+import { DEFAULT_STORE_BASE_URL } from '../groceries/frys'
+import type { ParsedReceiptItem } from '../groceries/receiptParse'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   weekStartsOn: 0,
@@ -380,12 +460,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'auto',
   weather: null,
   sleep: { enabled: false, start: '21:30', end: '06:30' },
+  nightDimming: { enabled: false, start: '21:00', end: '06:30', level: 40 },
   screensaver: { folder: null, idleMinutes: 10 },
   launchOnStartup: false,
   homeLayout: DEFAULT_HOME_LAYOUT,
   companion: { enabled: false, port: 8420 },
   syncIntervalMinutes: 15,
-  routinesDisplay: 'all'
+  routinesDisplay: 'all',
+  groceries: { storeBaseUrl: DEFAULT_STORE_BASE_URL }
 }
 
 /** Touch-friendly person color palette (Skylight-style) */
