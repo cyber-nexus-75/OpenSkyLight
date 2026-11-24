@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { DateTime } from 'luxon'
 import { MEAL_SLOTS, type MealSlotKind } from '@shared/types'
-import { useMealMutations, useMeals } from '../api/hooks'
+import { useMealMutations, useMeals, useRecipeMutations, useRecipes } from '../api/hooks'
 import { Card, PrimaryButton, TextInput } from '../components/ui'
 
 const SLOT_COLORS: Record<MealSlotKind, string> = {
@@ -82,6 +82,65 @@ export function MealsPage() {
           </Card>
         )
       })}
+      <RecipesSection />
     </div>
+  )
+}
+
+function RecipesSection() {
+  const recipes = useRecipes()
+  const mutations = useRecipeMutations()
+  const [url, setUrl] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const run = (): void => {
+    setError(null)
+    mutations.importUrl.mutate(
+      { url: url.trim() },
+      {
+        onSuccess: () => setUrl(''),
+        onError: (err: Error) => setError(err.message)
+      }
+    )
+  }
+  return (
+    <Card>
+      <h2 className="mb-2 font-display text-xl font-semibold">Recipe library</h2>
+      <div className="flex gap-2">
+        <TextInput
+          value={url}
+          onChange={setUrl}
+          placeholder="Paste a recipe URL to import it"
+          inputMode="text"
+        />
+        <PrimaryButton onClick={run} disabled={!url.trim() || mutations.importUrl.isPending}>
+          {mutations.importUrl.isPending ? 'Importing…' : 'Import'}
+        </PrimaryButton>
+      </div>
+      {error && <p className="mt-2 text-sm font-bold text-ember">{error}</p>}
+      <div className="mt-3 flex flex-col gap-2">
+        {(recipes.data ?? []).length === 0 && (
+          <p className="text-sm font-semibold text-ink-faint">No recipes yet — import one above.</p>
+        )}
+        {(recipes.data ?? []).map((r) => (
+          <div key={r.id} className="flex items-center gap-2 border-b border-line/60 py-2 last:border-0">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-base font-bold">{r.title}</div>
+              <div className="truncate text-sm font-semibold text-ink-faint">
+                {r.ingredients.length} ingredients
+                {r.tags.length > 0 ? ` · ${r.tags.slice(0, 3).join(', ')}` : ''}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => mutations.remove.mutate({ id: r.id })}
+              aria-label={`Delete ${r.title}`}
+              className="pressable rounded-lg px-2 py-1 text-sm font-extrabold text-ink-faint"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }
