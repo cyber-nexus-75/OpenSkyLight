@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AiEventDraft, CalendarDto, ChoreDto, PersonDto, PersonRole, RecurrenceInput, RewardDto } from '@shared/types'
 import { PERSON_COLORS } from '@shared/types'
 import { describeRecurrence } from '@shared/recurrence/build'
@@ -37,6 +37,7 @@ import { PinDialog } from '../../components/PinDialog'
 import { TimeField } from '../../components/DateTimePickers'
 import { ipcInvoke } from '../../api/client'
 import { useUi } from '../../stores/uiStore'
+import { useToasts } from '../../stores/toastStore'
 import { BigButton, Dialog, FieldLabel, SegmentedControl, Sheet, Toggle } from '../../components/ui'
 import { OskInput } from '../../components/Osk'
 import { PlusIcon } from '../../components/icons'
@@ -177,6 +178,8 @@ function FamilyTab() {
   const [name, setName] = useState('')
   const [color, setColor] = useState<string>(PERSON_COLORS[0])
   const [role, setRole] = useState<PersonRole>('child')
+  const [birthday, setBirthday] = useState('')
+  const [birthYear, setBirthYear] = useState('')
 
   const openEditor = (p: PersonDto | 'new'): void => {
     setEditing(p)
@@ -184,17 +187,29 @@ function FamilyTab() {
       setName('')
       setColor(PERSON_COLORS[people.length % PERSON_COLORS.length])
       setRole('child')
+      setBirthday('')
+      setBirthYear('')
     } else {
       setName(p.name)
       setColor(p.color)
       setRole(p.role)
+      setBirthday(p.birthday ?? '')
+      setBirthYear(p.birthYear ? String(p.birthYear) : '')
     }
   }
 
   const save = (): void => {
     if (!name.trim()) return
     if (editing === 'new') mutations.create.mutate({ name: name.trim(), color, role })
-    else if (editing) mutations.update.mutate({ id: editing.id, name: name.trim(), color, role })
+    else if (editing)
+      mutations.update.mutate({
+        id: editing.id,
+        name: name.trim(),
+        color,
+        role,
+        birthday: birthday || null,
+        birthYear: birthYear ? Number(birthYear) : null
+      })
     setEditing(null)
   }
 
@@ -245,6 +260,28 @@ function FamilyTab() {
                 { value: 'child', label: 'Child' }
               ]}
             />
+          </div>
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <FieldLabel>Birthday</FieldLabel>
+              <input
+                type="text"
+                value={birthday}
+                onChange={(e) => setBirthday(e.target.value)}
+                placeholder="MM-DD"
+                className="min-h-11 w-full rounded-xl border border-line bg-paper px-3 text-base font-semibold outline-none placeholder:text-ink-faint focus:border-ember"
+              />
+            </div>
+            <div className="w-28">
+              <FieldLabel>Year</FieldLabel>
+              <input
+                type="text"
+                value={birthYear}
+                onChange={(e) => setBirthYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="optional"
+                className="min-h-11 w-full rounded-xl border border-line bg-paper px-3 text-base font-semibold outline-none placeholder:text-ink-faint focus:border-ember"
+              />
+            </div>
           </div>
           <div className="mt-2 flex gap-3">
             {editing !== 'new' && editing && (
@@ -709,6 +746,7 @@ function ChoresTab() {
   const [editingChore, setEditingChore] = useState<ChoreDto | 'new' | null>(null)
   const [choreTitle, setChoreTitle] = useState('')
   const [chorePerson, setChorePerson] = useState<string | null>(null)
+  const [choreRotation, setChoreRotation] = useState<string[]>([])
   const [choreStars, setChoreStars] = useState(1)
   const [schedule, setSchedule] = useState<ScheduleKind>('daily')
   const [weekdays, setWeekdays] = useState<number[]>([])
@@ -727,9 +765,11 @@ function ChoresTab() {
       setSchedule('daily')
       setWeekdays([])
       setRoutine('any')
+      setChoreRotation([])
     } else {
       setChoreTitle(c.title)
       setChorePerson(c.personId)
+      setChoreRotation(c.rotationPersonIds ?? [])
       setChoreStars(c.starsValue)
       setSchedule(scheduleOf(c.recurrence))
       setWeekdays(c.recurrence?.byWeekdays ?? [])
@@ -748,6 +788,7 @@ function ChoresTab() {
     const common = {
       title: choreTitle.trim(),
       personId: chorePerson,
+      rotationPersonIds: choreRotation.length >= 2 ? choreRotation : [],
       starsValue: choreStars,
       recurrence,
       routine: routine === 'any' ? null : routine
@@ -871,6 +912,35 @@ function ChoresTab() {
                     key={p.id}
                     type="button"
                     onClick={() => setChorePerson(p.id)}
+                    className={`pressable rounded-full border-2 px-4 py-2 text-base font-bold ${
+                      on ? 'border-transparent' : 'border-line bg-card text-ink-soft'
+                    }`}
+                    style={on ? { backgroundColor: p.color, color: textOn(p.color) } : undefined}
+                  >
+                    {p.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div>
+            <FieldLabel>Rotate between (optional)</FieldLabel>
+            <p className="mb-2 text-sm font-semibold text-ink-faint">
+              Pick 2+ people to alternate this chore weekly — overrides "Who".
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {people.map((p) => {
+                const on = choreRotation.includes(p.id)
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() =>
+                      setChoreRotation((prev) =>
+                        prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                      )
+                    }
+                    aria-pressed={on}
                     className={`pressable rounded-full border-2 px-4 py-2 text-base font-bold ${
                       on ? 'border-transparent' : 'border-line bg-card text-ink-soft'
                     }`}
@@ -1231,6 +1301,166 @@ function hhMmToMinutes(s: string): number {
   return (h || 0) * 60 + (m || 0)
 }
 
+function BackupSection() {
+  const queryClient = useQueryClient()
+  const pushToast = useToasts((s) => s.push)
+  const status = useQuery({
+    queryKey: ['backupStatus'],
+    queryFn: () => ipcInvoke('backup:getStatus', undefined)
+  })
+  const remote = useQuery({
+    queryKey: ['backupRemote'],
+    queryFn: () => ipcInvoke('backup:listRemote', undefined),
+    staleTime: 60_000
+  })
+  const run = useMutation({
+    mutationFn: (fn: () => Promise<unknown>) => fn(),
+    onSuccess: (_data, fn) => {
+      void queryClient.invalidateQueries({ queryKey: ['backupStatus'] })
+      void queryClient.invalidateQueries({ queryKey: ['backupRemote'] })
+      void queryClient.invalidateQueries({ queryKey: ['people'] })
+      void queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
+      void queryClient.invalidateQueries({ queryKey: ['settings'] })
+      fn === undefined // no-op to keep ts happy about the unused arg
+    },
+    onError: (err: Error) => pushToast(err.message)
+  })
+  const st = status.data
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+      <FieldLabel>Backup &amp; restore</FieldLabel>
+      <p className="text-sm font-semibold text-ink-faint">
+        Backs up the whole family dataset (people, events, chores, stars, lists, meals,
+        and settings) as one JSON file. Credentials are never included — re-enter them on
+        a new system. Automatic backups go to your WebDAV photo folder (backups/
+        subfolder) once a day when it's connected.
+      </p>
+      {st?.lastAutoBackupAt && (
+        <p className="text-sm font-bold text-ink-faint">
+          Last auto-backup: {new Date(st.lastAutoBackupAt).toLocaleString()}
+          {st.lastAutoBackupError ? ` · error: ${st.lastAutoBackupError}` : ''}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <BigButton
+          variant="ghost"
+          onClick={() => run.mutate(() => ipcInvoke('backup:exportToFile', undefined))}
+          disabled={run.isPending}
+        >
+          Save backup to a file
+        </BigButton>
+        <BigButton
+          variant="ghost"
+          onClick={() => run.mutate(() => ipcInvoke('backup:uploadNow', undefined))}
+          disabled={run.isPending}
+        >
+          Back up to Nextcloud now
+        </BigButton>
+        <BigButton
+          variant="ghost"
+          onClick={() => run.mutate(() => ipcInvoke('backup:restoreFromFile', undefined))}
+          disabled={run.isPending}
+        >
+          Restore from a file
+        </BigButton>
+      </div>
+      {remote.data && remote.data.length > 0 && (
+        <div>
+          <span className="mb-1 block text-xs font-extrabold text-ink-faint">
+            BACKUPS ON NEXTCLOUD (newest first, max 30)
+          </span>
+          <div className="flex max-h-44 flex-col gap-1 overflow-y-auto">
+            {remote.data.slice(0, 30).map((b) => (
+              <div key={b.name} className="flex items-center gap-2 rounded-xl bg-card px-3 py-1.5">
+                <span className="min-w-0 flex-1 truncate text-sm font-bold">{b.name}</span>
+                <span className="text-xs font-bold text-ink-faint">
+                  {(b.size / 1024).toFixed(0)} KB
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Restore ${b.name}? This replaces all current data.`)) {
+                      run.mutate(() => ipcInvoke('backup:restoreFromRemote', { name: b.name }))
+                    }
+                  }}
+                  className="pressable rounded-lg bg-ember px-3 py-1 text-sm font-extrabold text-white"
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DoorbellSection() {
+  const queryClient = useQueryClient()
+  const { data: cameras = [] } = useQuery({ queryKey: ['cameras'], queryFn: () => ipcInvoke('camera:list', undefined) })
+  const status = useQuery({ queryKey: ['doorbellStatus'], queryFn: () => ipcInvoke('doorbell:getStatus', undefined) })
+  const refresh = (): void => void queryClient.invalidateQueries({ queryKey: ['doorbellStatus'] })
+  const setCamera = useMutation({
+    mutationFn: (input: { cameraId: string | null }) => ipcInvoke('doorbell:setCamera', input),
+    onSuccess: refresh
+  })
+  const rotate = useMutation({
+    mutationFn: () => ipcInvoke('doorbell:rotateToken', undefined),
+    onSuccess: refresh
+  })
+  const st = status.data
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+      <FieldLabel>Doorbell</FieldLabel>
+      <p className="text-sm font-semibold text-ink-faint">
+        When your UniFi doorbell rings, this display chimes and shows the door camera
+        full-screen. In UniFi Protect: Alarm Manager → create an alarm → activity "Ring" →
+        custom webhook, and paste the URL below. Requires the companion server to be running.
+      </p>
+      <div>
+        <span className="mb-1 block text-xs font-extrabold text-ink-faint">DOORBELL CAMERA</span>
+        <select
+          value={st?.cameraId ?? ''}
+          onChange={(e) => setCamera.mutate({ cameraId: e.target.value || null })}
+          className="min-h-11 w-full rounded-xl border-2 border-line bg-card px-3 text-base font-bold"
+          aria-label="Doorbell camera"
+        >
+          <option value="">None</option>
+          {cameras.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {st?.webhookUrl ? (
+        <div>
+          <span className="mb-1 block text-xs font-extrabold text-ink-faint">WEBHOOK URL (paste into Protect)</span>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 overflow-x-auto rounded-xl bg-card p-3 text-sm font-bold">
+              {st.webhookUrl}
+            </code>
+            <BigButton variant="ghost" onClick={() => void navigator.clipboard?.writeText(st.webhookUrl!)}>
+              Copy
+            </BigButton>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm font-semibold text-ink-faint">
+          Pick a camera to generate the webhook URL.
+        </p>
+      )}
+      {st?.webhookUrl && (
+        <BigButton variant="ghost" onClick={() => rotate.mutate(undefined)} disabled={rotate.isPending}>
+          Rotate webhook URL (invalidates the old one)
+        </BigButton>
+      )}
+    </div>
+  )
+}
+
 function AiImportSection() {
   const queryClient = useQueryClient()
   const ai = useAiImport()
@@ -1243,6 +1473,11 @@ function AiImportSection() {
   const [images, setImages] = useState<string[]>([])
   const [drafts, setDrafts] = useState<AiEventDraft[] | null>(null)
   const writable = calendars.filter((c) => !c.readOnly)
+  const pending = useQuery({
+    queryKey: ['aiScanPending'],
+    queryFn: () => ipcInvoke('aiScan:getPending', undefined),
+    refetchInterval: 60_000
+  })
 
   const attach = (): void => {
     const input = document.createElement('input')
@@ -1347,6 +1582,79 @@ function AiImportSection() {
           </BigButton>
           {ai.importEvents.isError && (
             <p className="text-sm font-bold text-ember-deep">{ai.importEvents.error.message}</p>
+          )}
+          {(pending.data ?? []).length > 0 && (
+            <div className="rounded-xl bg-card p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="flex-1 text-sm font-extrabold text-ink-faint">
+                  SCANNED FROM NEXTCLOUD ({(pending.data ?? []).reduce((n, p) => n + p.drafts.length, 0)} drafts)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void ipcInvoke('aiScan:clear', undefined).then(() =>
+                      queryClient.invalidateQueries({ queryKey: ['aiScanPending'] })
+                    )
+                  }}
+                  className="pressable rounded-lg px-2 py-1 text-sm font-extrabold text-ink-faint"
+                >
+                  Clear all
+                </button>
+              </div>
+              {(pending.data ?? []).map((batch, bi) =>
+                batch.drafts.map((d, di) => (
+                  <div key={`${bi}-${di}`} className="flex items-center gap-2 border-b border-line/60 py-1.5 last:border-0">
+                    <span className="min-w-0 flex-1 truncate text-sm font-bold">
+                      {d.title}
+                      <span className="ml-2 text-xs font-bold text-ink-faint">{batch.source}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void ipcInvoke('events:create', {
+                          calendarId: writable[0].id,
+                          title: d.title,
+                          location: d.location,
+                          description: d.description,
+                          start: d.allDay
+                            ? new Date(`${d.date}T00:00:00`).toISOString()
+                            : new Date(`${d.date}T${d.startTime}:00`).toISOString(),
+                          end: d.allDay
+                            ? new Date(new Date(`${d.date}T00:00:00`).getTime() + 86400000).toISOString()
+                            : d.endTime
+                              ? new Date(`${d.date}T${d.endTime}:00`).toISOString()
+                              : new Date(new Date(`${d.date}T${d.startTime}:00`).getTime() + 3600000).toISOString(),
+                          tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                          allDay: d.allDay,
+                          personIds: [],
+                          recurrence: d.repeat ? { freq: d.repeat } : null
+                        }).then(() => {
+                          void ipcInvoke('aiScan:removeDraft', { batch: bi, index: di }).then(() => {
+                            void queryClient.invalidateQueries({ queryKey: ['aiScanPending'] })
+                          })
+                          void queryClient.invalidateQueries({ queryKey: ['occurrences'] })
+                        })
+                      }}
+                      disabled={writable.length === 0}
+                      className="pressable rounded-lg bg-ember px-3 py-1 text-sm font-extrabold text-white disabled:opacity-40"
+                    >
+                      Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void ipcInvoke('aiScan:removeDraft', { batch: bi, index: di }).then(() => {
+                          void queryClient.invalidateQueries({ queryKey: ['aiScanPending'] })
+                        })
+                      }}
+                      className="pressable rounded-lg bg-paper-deep px-3 py-1 text-sm font-extrabold text-ink-faint"
+                    >
+                      Discard
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           )}
         </div>
       ) : (
@@ -1577,6 +1885,57 @@ function SleepSection() {
   )
 }
 
+function NightDimmingSection() {
+  const { data: settings } = useSettings()
+  const mutation = useSettingsMutation()
+  if (!settings) return null
+  const nd = settings.nightDimming
+  return (
+    <div>
+      <FieldLabel>Night dimming</FieldLabel>
+      <div className="flex flex-col gap-3 rounded-2xl bg-paper-deep/50 p-4">
+        <div className="flex items-center gap-3">
+          <span className="flex-1 text-base font-semibold text-ink-soft">
+            Dim the screen during these hours — softer than full sleep, still readable.
+          </span>
+          <Toggle checked={nd.enabled} onChange={(enabled) => mutation.mutate({ nightDimming: { ...nd, enabled } })} label="Night dimming" />
+        </div>
+        {nd.enabled && (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <TimeField
+                label="Dim at"
+                minutes={hhMmToMinutes(nd.start)}
+                timeFormat={settings.timeFormat}
+                onChange={(m) => mutation.mutate({ nightDimming: { ...nd, start: minutesToHhMm(m) } })}
+              />
+              <TimeField
+                label="Brighten at"
+                minutes={hhMmToMinutes(nd.end)}
+                timeFormat={settings.timeFormat}
+                onChange={(m) => mutation.mutate({ nightDimming: { ...nd, end: minutesToHhMm(m) } })}
+              />
+            </div>
+            <div>
+              <FieldLabel>Brightness ({nd.level}%)</FieldLabel>
+              <input
+                type="range"
+                min={10}
+                max={90}
+                step={5}
+                value={nd.level}
+                onChange={(e) => mutation.mutate({ nightDimming: { ...nd, level: Number(e.target.value) } })}
+                className="w-full accent-[var(--color-ember)]"
+                aria-label="Dimming level"
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function GeneralTab() {
   const { data: settings } = useSettings()
   const mutation = useSettingsMutation()
@@ -1606,7 +1965,10 @@ function GeneralTab() {
       <ScreensaverSection />
       <WebdavPhotosSection />
       <AiImportSection />
+      <DoorbellSection />
+      <BackupSection />
       <SleepSection />
+      <NightDimmingSection />
       <ParentalLockSection />
       <CompanionSection />
       <div>

@@ -208,6 +208,15 @@ const MIGRATIONS: string[] = [
   ALTER TABLE calendars ADD COLUMN caldav_account_id TEXT REFERENCES caldav_accounts(id);
   ALTER TABLE calendars ADD COLUMN caldav_calendar_url TEXT;
   ALTER TABLE calendars ADD COLUMN person_id TEXT REFERENCES people(id);
+  `,
+  // 003 — birthdays on people
+  `
+  ALTER TABLE people ADD COLUMN birthday TEXT;
+  ALTER TABLE people ADD COLUMN birth_year INTEGER;
+  `,
+  // 004 — chore rotations
+  `
+  ALTER TABLE chores ADD COLUMN rotation_person_ids TEXT;
   `
 ]
 

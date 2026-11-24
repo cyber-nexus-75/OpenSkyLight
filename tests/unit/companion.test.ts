@@ -6,6 +6,7 @@ import type os from 'node:os'
 import { createCompanionTokens } from '../../src/main/companion/companionTokens'
 import { pickLanAddresses } from '../../src/main/companion/lanAddress'
 import { createCompanionServer, type CompanionServer } from '../../src/main/companion/companionServer'
+import { createDoorbellService } from '../../src/main/services/doorbellService'
 import type { SettingsService } from '../../src/main/services/settingsService'
 import type { IpcResult } from '../../src/shared/ipc/contract'
 
@@ -111,7 +112,10 @@ describe('companionServer', () => {
       staticRoot,
       avatarBytes: () => null,
       uploadPhoto: async () => undefined,
-      setAvatar: async () => undefined
+      setAvatar: async () => undefined,
+      acceptDoorbellRing: () => 'invalid' as const,
+      verifyDoorbellToken: () => false,
+      onDoorbellRing: () => undefined
     })
     server.applySettings()
     // wait for listen
@@ -161,7 +165,10 @@ describe('companionServer', () => {
       staticRoot,
       avatarBytes: (personId) => (personId === 'p1' ? png : null),
       uploadPhoto: async () => undefined,
-      setAvatar: async () => undefined
+      setAvatar: async () => undefined,
+      acceptDoorbellRing: () => 'invalid' as const,
+      verifyDoorbellToken: () => false,
+      onDoorbellRing: () => undefined
     })
     server.applySettings()
     for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
@@ -209,7 +216,10 @@ describe('companionServer', () => {
       uploadPhoto: async (name, bytes) => {
         uploads.push({ name, bytes })
       },
-      setAvatar: async () => undefined
+      setAvatar: async () => undefined,
+      acceptDoorbellRing: () => 'invalid' as const,
+      verifyDoorbellToken: () => false,
+      onDoorbellRing: () => undefined
     })
     server.applySettings()
     for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
@@ -250,7 +260,10 @@ describe('companionServer', () => {
       uploadPhoto: async () => {
         throw new Error('WebDAV not configured')
       },
-      setAvatar: async () => undefined
+      setAvatar: async () => undefined,
+      acceptDoorbellRing: () => 'invalid' as const,
+      verifyDoorbellToken: () => false,
+      onDoorbellRing: () => undefined
     })
     server.applySettings()
     for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
@@ -283,7 +296,10 @@ describe('companionServer', () => {
       uploadPhoto: async () => undefined,
       setAvatar: async (personId, bytes) => {
         received.push({ personId, bytes })
-      }
+      },
+      acceptDoorbellRing: () => 'invalid' as const,
+      verifyDoorbellToken: () => false,
+      onDoorbellRing: () => undefined
     })
     server.applySettings()
     for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
@@ -311,6 +327,51 @@ describe('companionServer', () => {
     expect(ok.status).toBe(200)
     expect(await ok.json()).toEqual({ ok: true, data: null })
     expect(received).toEqual([{ personId: 'p1', bytes }])
+  })
+
+  it('doorbell webhook: valid POST rings, wrong token 404, GET probes without ringing', async () => {
+    staticRoot = mkdtempSync(join(tmpdir(), 'osl-companion-'))
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html>')
+    const settings = settingsStub({ enabled: true, port: 0 })
+    const tokens = createCompanionTokens(settings)
+    const doorbell = createDoorbellService({ settings, port: () => 0 })
+    const rings: number[] = []
+    server = createCompanionServer({
+      settings,
+      tokens,
+      dispatch: async () => ({ ok: true, data: null }),
+      version: '0.0.0-test',
+      staticRoot,
+      avatarBytes: () => null,
+      uploadPhoto: async () => undefined,
+      setAvatar: async () => undefined,
+      acceptDoorbellRing: (t) => doorbell.acceptRing(t),
+      verifyDoorbellToken: (t) => doorbell.verifyToken(t),
+      onDoorbellRing: () => rings.push(Date.now())
+    })
+    server.applySettings()
+    for (let i = 0; i < 100 && !server.getStatus().running; i++) await new Promise((r) => setTimeout(r, 10))
+    const port = Number(new URL(server.issueToken().url).port)
+    const base = `http://127.0.0.1:${port}`
+    const { webhookToken } = doorbell.setCamera('cam-1')
+
+    // wrong token looks like a nonexistent path
+    const wrong = await fetch(`${base}/api/doorbell/nope`, { method: 'POST' })
+    expect(wrong.status).toBe(404)
+    expect(rings.length).toBe(0)
+
+    // GET (Protect's URL validator probing) answers 200 but does not ring
+    const probe = await fetch(`${base}/api/doorbell/${webhookToken}`)
+    expect(probe.status).toBe(200)
+    expect(rings.length).toBe(0)
+
+    // POST rings exactly once; retries inside the debounce window are dropped
+    const ring1 = await fetch(`${base}/api/doorbell/${webhookToken}`, { method: 'POST' })
+    expect(ring1.status).toBe(200)
+    expect(rings.length).toBe(1)
+    const ring2 = await fetch(`${base}/api/doorbell/${webhookToken}`, { method: 'POST' })
+    expect(ring2.status).toBe(200)
+    expect(rings.length).toBe(1)
   })
 
   it('rejects channels outside the allowlist even with a valid token', async () => {
