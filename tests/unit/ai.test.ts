@@ -114,6 +114,16 @@ describe('aiService', () => {
     await expect(ai.importEvents({ text: 'x', images: ['!!notbase64'], tz: 'UTC' }, okTransport())).rejects.toThrow(
       /PNG, JPEG/
     )
+
+    // WebP is advertised as supported and must sniff to image/webp
+    const webp = 'UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA=='
+    await ai.importEvents({ text: 'flyer', images: [webp], tz: 'UTC' }, okTransport(seen))
+    const webpContent = (seen[seen.length - 1].body as { messages: { content: unknown }[] }).messages[1].content as {
+      type: string
+      image_url: { url: string }
+    }[]
+    const imagePart = webpContent.find((p) => p.type === 'image_url')!
+    expect(imagePart.image_url.url.startsWith('data:image/webp;base64,')).toBe(true)
   })
 
   it('rejects empty input, >5 attachments, and bad model replies', async () => {

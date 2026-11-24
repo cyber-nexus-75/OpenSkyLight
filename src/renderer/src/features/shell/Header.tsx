@@ -19,7 +19,7 @@ function useNow(): DateTime {
 
 function periodLabel(view: CalendarViewKind, focusedDate: string, weekStartsOn: 0 | 1): string {
   const d = DateTime.fromISO(focusedDate, { zone: ZONE })
-  if (view === 'home' || view === 'lists') return ''
+  if (view === 'home' || view === 'lists' || view === 'groceries') return ''
   if (view === 'day' || view === 'chores' || view === 'tasks') return d.toFormat('LLL d')
   if (view === 'month') return d.toFormat('LLLL yyyy')
   if (view === 'agenda') return `From ${d.toFormat('LLL d')}`
@@ -101,7 +101,7 @@ export function Header() {
       )}
 
       {/* period nav (removed from layout where it isn't meaningful — space matters here) */}
-      {view !== 'lists' && view !== 'home' && (
+      {view !== 'lists' && view !== 'home' && view !== 'groceries' && (
         <div className="flex shrink-0 items-center gap-1 rounded-2xl bg-paper-deep/70 p-1">
           <IconButton label="Previous" onClick={() => step(-1)}>
             <ChevronLeftIcon />
@@ -130,7 +130,8 @@ export function Header() {
           { value: 'agenda', label: 'Agenda' },
           { value: 'chores', label: 'Chores' },
           { value: 'tasks', label: 'Tasks' },
-          { value: 'lists', label: 'Lists' }
+          { value: 'lists', label: 'Lists' },
+          { value: 'groceries', label: 'Groceries' }
         ]}
       />
 

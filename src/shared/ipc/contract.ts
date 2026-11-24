@@ -13,23 +13,29 @@ import type {
   EventDeleteInput,
   EventDto,
   EventUpdateInput,
+  GroceriesStateDto,
   ListDto,
   ListItemDto,
   ListKind,
   MealSlotDto,
   MealSlotKind,
   OccurrenceDto,
+  PantryItemDto,
   RecipeCreateInput,
   RecipeDto,
   RecipeUpdateInput,
   PersonCreateInput,
   PersonDto,
   PersonUpdateInput,
+  ReceiptScanDto,
+  ReceiptScanResultDto,
   RedemptionDto,
   RewardDto,
+  ShoppingItemDto,
   StarBalanceDto,
   TaskItemDto
 } from '../types'
+import type { ParsedReceipt } from '../groceries/receiptParse'
 
 /**
  * The single source of truth for renderer <-> main communication.
@@ -170,7 +176,45 @@ export type IpcContract = {
   'recipes:list': { req: void; res: RecipeDto[] }
   'recipes:create': { req: RecipeCreateInput; res: RecipeDto }
   'recipes:update': { req: RecipeUpdateInput; res: RecipeDto }
+  'recipes:importUrl': { req: { url: string }; res: RecipeDto }
   'recipes:delete': { req: { id: string }; res: void }
+
+  'groceries:getState': { req: void; res: GroceriesStateDto }
+  'pantry:add': {
+    req: { name: string; quantity?: number; unit?: string | null; minQuantity?: number; category?: string | null }
+    res: PantryItemDto
+  }
+  'pantry:update': {
+    req: { id: string; name?: string; quantity?: number; unit?: string | null; minQuantity?: number; category?: string | null }
+    res: PantryItemDto
+  }
+  /** relative quantity change (voice: "used 2 eggs"); floored at 0 */
+  'pantry:adjust': { req: { id: string; delta: number }; res: PantryItemDto }
+  'pantry:remove': { req: { id: string }; res: void }
+  'shopping:add': { req: { name: string; quantity?: number; unit?: string | null; note?: string | null }; res: ShoppingItemDto }
+  'shopping:update': { req: { id: string; name?: string; quantity?: number; note?: string | null }; res: ShoppingItemDto }
+  'shopping:toggle': { req: { id: string }; res: void }
+  'shopping:remove': { req: { id: string }; res: void }
+  'shopping:clearChecked': { req: void; res: void }
+  /** push every low-stock pantry item onto the shopping list */
+  'shopping:addLowStock': { req: void; res: { added: number } }
+  /** OCR a receipt photo (base64 PNG/JPEG); items are NOT applied until groceries:applyReceipt */
+  'groceries:scanReceipt': { req: { data: string }; res: ReceiptScanResultDto }
+  /** confirm (possibly edited) parsed receipt items into the pantry */
+  'groceries:applyReceipt': {
+    req: { scanId: string; items: { name: string; quantity: number; unit?: string | null }[] }
+    res: { updated: number }
+  }
+  'groceries:listReceipts': { req: void; res: ReceiptScanDto[] }
+  'groceries:receiptDetail': {
+    req: { scanId: string }
+    res: { scan: ReceiptScanDto; rawText: string; parsed: ParsedReceipt }
+  }
+  'groceries:receiptImage': { req: { scanId: string }; res: { dataUrl: string | null } }
+  /** open the store's product search (or store home when query is empty) in the system browser */
+  'groceries:openFrys': { req: { query?: string }; res: { url: string } }
+  /** build the order export (text or CSV) from unchecked shopping items and put it on the clipboard */
+  'groceries:copyList': { req: { format: 'text' | 'csv' }; res: { text: string } }
 
   'rewards:list': { req: void; res: RewardDto[] }
   'rewards:create': { req: { title: string; costStars: number }; res: RewardDto }
@@ -251,11 +295,36 @@ export type IpcContract = {
   'ai:getStatus': { req: void; res: { configured: boolean; endpointUrl: string | null; model: string | null } }
   'ai:setConfig': { req: { endpointUrl: string; model: string; apiKey: string }; res: void }
   'ai:clearConfig': { req: void; res: void }
+  'backup:exportToFile': { req: void; res: { path: string } }
+  'backup:restoreFromFile': { req: void; res: { counts: Record<string, number> } }
+  'backup:uploadNow': { req: void; res: { fileName: string } }
+  'backup:listRemote': { req: void; res: { name: string; etag: string; size: number }[] }
+  'backup:restoreFromRemote': { req: { name: string }; res: { counts: Record<string, number> } }
+  'wallnote:get': { req: void; res: { text: string; updatedAt: string | null } }
+  'wallnote:set': { req: { text: string }; res: { text: string; updatedAt: string } }
+  'backup:getStatus': {
+    req: void
+    res: { lastAutoBackupAt: string | null; lastAutoBackupError: string | null }
+  }
+  'doorbell:getStatus': {
+    req: void
+    res: { webhookToken: string | null; webhookUrl: string | null; cameraId: string | null }
+  }
+  'doorbell:setCamera': { req: { cameraId: string | null }; res: { webhookToken: string; webhookUrl: string } }
+  'doorbell:rotateToken': { req: void; res: { webhookToken: string; webhookUrl: string } }
+  'aiScan:getPending': {
+    req: void
+    res: { drafts: AiEventDraft[]; source: string }[]
+  }
+  'aiScan:clear': { req: void; res: void }
+  'aiScan:removeDraft': { req: { batch: number; index: number }; res: void }
   'ai:importEvents': {
     req: { text: string; images: string[]; tz: string }
     res: { drafts: AiEventDraft[] }
   }
   'kiosk:previewScreensaver': { req: void; res: void }
+  /** Web-kiosk clients report their own idle time so the screensaver works without OS power APIs. */
+  'kiosk:reportIdle': { req: { seconds: number }; res: void }
 
   'companion:getStatus': {
     req: void
@@ -299,6 +368,7 @@ export const ALLOWED_CHANNEL_PREFIXES = [
   'calendars:',
   'events:',
   'google:',
+  'caldav:',
   'ics:',
   'sync:',
   'weather:',
@@ -309,10 +379,21 @@ export const ALLOWED_CHANNEL_PREFIXES = [
   'lists:',
   'listItems:',
   'meals:',
+  'groceries:',
+  'pantry:',
+  'shopping:',
   'screensaver:',
   'kiosk:',
   'rss:',
   'camera:',
+  'unifi:',
+  'webdav:',
+  'ai:',
+  'aiScan:',
+  'recipes:',
+  'doorbell:',
+  'backup:',
+  'wallnote:',
   'companion:',
   'birdnet:'
 ] as const

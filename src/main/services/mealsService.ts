@@ -30,7 +30,7 @@ function recipeDto(row: RecipeRow): RecipeDto {
   } catch {
     tags = []
   }
-  return { id: row.id, title: row.title, ingredients, instructions: row.instructions, tags }
+  return { id: row.id, title: row.title, ingredients, instructions: row.instructions, tags, sourceUrl: null }
 }
 
 export function createMealsService(db: AppDb, lists: ListsService) {

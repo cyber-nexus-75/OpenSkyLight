@@ -209,7 +209,58 @@ const MIGRATIONS: string[] = [
   ALTER TABLE calendars ADD COLUMN caldav_calendar_url TEXT;
   ALTER TABLE calendars ADD COLUMN person_id TEXT REFERENCES people(id);
   `,
-  // 003 — chore upgrades: up-for-grabs pool, repeat-after-completion, linked chores, afternoon routine
+  // 003 — birthdays on people
+  `
+  ALTER TABLE people ADD COLUMN birthday TEXT;
+  ALTER TABLE people ADD COLUMN birth_year INTEGER;
+  `,
+  // 004 — chore rotations
+  `
+  ALTER TABLE chores ADD COLUMN rotation_person_ids TEXT;
+  `,
+  // 005 — groceries: pantry inventory, weekly shopping list, receipt scans
+  `
+  CREATE TABLE pantry_items (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_key TEXT NOT NULL,
+    category TEXT,
+    unit TEXT,
+    quantity REAL NOT NULL DEFAULT 0,
+    min_quantity REAL NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'manual',
+    updated_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+  CREATE INDEX idx_pantry_name_key ON pantry_items(name_key);
+
+  CREATE TABLE shopping_items (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_key TEXT NOT NULL,
+    quantity REAL NOT NULL DEFAULT 1,
+    unit TEXT,
+    note TEXT,
+    checked INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_shopping_name_key ON shopping_items(name_key);
+
+  CREATE TABLE receipt_scans (
+    id TEXT PRIMARY KEY,
+    image_path TEXT NOT NULL,
+    store TEXT,
+    total REAL,
+    raw_text TEXT,
+    item_count INTEGER NOT NULL DEFAULT 0,
+    applied_at TEXT,
+    scanned_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `,
+  // 006 — chore upgrades: up-for-grabs pool, repeat-after-completion, linked chores, afternoon routine
   `
   ALTER TABLE chores ADD COLUMN up_for_grabs INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE chores ADD COLUMN repeat_after INTEGER NOT NULL DEFAULT 0;
@@ -221,7 +272,7 @@ const MIGRATIONS: string[] = [
     UNIQUE (chore_id, linked_chore_id)
   );
   `,
-  // 004 — meals: per-person assignment, ordering, recipe linkage
+  // 007 — meals: per-person assignment, ordering, recipe linkage
   `
   ALTER TABLE meal_slots ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
   CREATE TABLE meal_slot_people (

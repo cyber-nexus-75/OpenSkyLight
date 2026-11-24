@@ -154,3 +154,46 @@ export const LockIcon = (p: IconProps) => (
     <path d="M8 11V7a4 4 0 0 1 8 0v4" />
   </svg>
 )
+
+export const MicIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M5 11a7 7 0 0 0 14 0" />
+    <path d="M12 18v3" />
+  </svg>
+)
+
+export const CameraIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+    <circle cx="12" cy="14" r="3.5" />
+  </svg>
+)
+
+export const CartIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <circle cx="9" cy="20" r="1.6" />
+    <circle cx="17" cy="20" r="1.6" />
+    <path d="M3 4h2l2.6 12h10.8l2-8H7" />
+  </svg>
+)
+
+export const SearchIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="M16 16l5 5" />
+  </svg>
+)
+
+export const MinusIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M5 12h14" />
+  </svg>
+)
+
+export const ReceiptIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21V3z" />
+    <path d="M9 8h6M9 12h6" />
+  </svg>
+)

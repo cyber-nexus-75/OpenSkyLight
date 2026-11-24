@@ -63,7 +63,11 @@ interface ActiveStream {
   graceTimer: NodeJS.Timeout | null
 }
 
-export function createCameraService(settings: SettingsService) {
+export function createCameraService(
+  settings: SettingsService,
+  opts: { noServer?: boolean; pathPrefix?: string } = {}
+) {
+  const pathPrefix = opts.pathPrefix ?? ''
   const streams = new Map<string, ActiveStream>()
   const sessions = new Map<string, ActiveStream>()
   const token = randomBytes(16).toString('hex')
@@ -110,12 +114,20 @@ export function createCameraService(settings: SettingsService) {
   function ensureServer(): Promise<number> {
     if (wssPort) return wssPort
     wssPort = new Promise((resolve, reject) => {
-      const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+      // server mode: no listening socket of its own — the main HTTP server
+      // upgrades /camera-ws connections onto this WSS via handleUpgrade
+      const server = opts.noServer
+        ? new WebSocketServer({ noServer: true })
+        : new WebSocketServer({ host: '127.0.0.1', port: 0 })
       wss = server
-      server.on('listening', () => {
-        const address = server.address()
-        resolve(typeof address === 'object' && address ? address.port : 0)
-      })
+      if (opts.noServer) {
+        resolve(0)
+      } else {
+        server.on('listening', () => {
+          const address = server.address()
+          resolve(typeof address === 'object' && address ? address.port : 0)
+        })
+      }
       server.on('error', (err) => {
         console.error('[camera] ws server error:', err.message)
         // forget the broken server so the next camera:start can try again
@@ -134,7 +146,9 @@ export function createCameraService(settings: SettingsService) {
       })
       server.on('connection', (ws, req) => {
         const url = new URL(req.url ?? '/', 'ws://127.0.0.1')
-        const cameraId = url.pathname.replace(/^\//, '')
+        let pathname = url.pathname
+        if (pathPrefix && pathname.startsWith(pathPrefix)) pathname = pathname.slice(pathPrefix.length)
+        const cameraId = pathname.replace(/^\//, '')
         const stream = streams.get(cameraId)
         if (url.searchParams.get('token') !== token || !stream) {
           ws.close(4001, 'unauthorized')
@@ -233,7 +247,7 @@ export function createCameraService(settings: SettingsService) {
     const sessionId = uuidv7()
     stream.sessions.add(sessionId)
     sessions.set(sessionId, stream)
-    return { wsUrl: `ws://127.0.0.1:${port}/${cameraId}?token=${token}`, sessionId }
+    return { wsUrl: `ws://127.0.0.1:${port}${pathPrefix}/${cameraId}?token=${token}`, sessionId }
   }
 
   function stop(sessionId: string): void {
@@ -244,13 +258,19 @@ export function createCameraService(settings: SettingsService) {
     if (stream.sessions.size === 0) killStream(stream)
   }
 
+  /** Server mode: hand an HTTP upgrade to the (noServer) WSS. Desktop mode: no-op. */
+  function handleUpgrade(req: import('node:http').IncomingMessage, socket: import('node:stream').Duplex, head: Buffer): void {
+    if (!wss) return
+    wss.handleUpgrade(req, socket, head, (ws) => wss!.emit('connection', ws, req))
+  }
+
   /** Kill every ffmpeg on app quit. */
   function shutdown(): void {
     for (const stream of [...streams.values()]) killStream(stream)
     wss?.close()
   }
 
-  return { list, add, remove, start, stop, shutdown }
+  return { list, add, remove, start, stop, shutdown, handleUpgrade }
 }
 
 export type CameraService = ReturnType<typeof createCameraService>

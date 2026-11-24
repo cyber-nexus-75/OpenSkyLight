@@ -1,13 +1,13 @@
 import { app, dialog, net, powerMonitor, powerSaveBlocker, protocol } from 'electron'
 import { readdirSync, existsSync } from 'node:fs'
-import { join, resolve, extname } from 'node:path'
+import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DateTime } from 'luxon'
 import type { SettingsService } from '../services/settingsService'
 import type { AvatarService } from '../services/avatarService'
 import { isInSleepWindow } from '@shared/sleepWindow'
+import { resolvePhotoInDir, PHOTO_EXTENSIONS } from './photoGuard'
 
-const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'])
 const IDLE_POLL_MS = 5_000
 const SLEEP_POLL_MS = 5_000
 
@@ -24,25 +24,25 @@ export function createKiosk(deps: {
   let screensaverOn = false
   let sleeping = false
   let blockerId: number | null = null
+  // last idle report from a web client (server mode has no OS idle API)
+  let webIdleSeconds = 0
+  let webIdleAtMs = 0
 
   /** Photos are served through osl-photo:// so the sandboxed renderer never touches the filesystem. */
   function registerPhotoProtocol(): void {
     protocol.handle('osl-photo', (request) => {
+      const name = decodeURIComponent(new URL(request.url).pathname.replace(/^\//, ''))
       const cache = webdavCacheDir
-      const name0 = decodeURIComponent(new URL(request.url).pathname.replace(/^\//, ''))
       if (cache) {
-        const cachedFull = resolve(join(cache, name0))
-        if (cachedFull.startsWith(resolve(cache)) && existsSync(cachedFull)) {
+        const cachedFull = resolvePhotoInDir(cache, name)
+        if (cachedFull && existsSync(cachedFull)) {
           return net.fetch(pathToFileURL(cachedFull).toString())
         }
       }
       const folder = settings.getAll().screensaver.folder
       if (!folder) return new Response('no folder', { status: 404 })
-      const url = new URL(request.url)
-      const name = decodeURIComponent(url.pathname.replace(/^\//, ''))
-      const full = resolve(join(folder, name))
-      // path-traversal guard: the resolved file must stay inside the folder
-      if (!full.startsWith(resolve(folder))) return new Response('forbidden', { status: 403 })
+      const full = resolvePhotoInDir(folder, name)
+      if (!full) return new Response('forbidden', { status: 403 })
       return net.fetch(pathToFileURL(full).toString())
     })
   }
@@ -138,7 +138,8 @@ export function createKiosk(deps: {
 
     idleTimer = setInterval(() => {
       const s = settings.getAll().screensaver
-      const idleSeconds = powerMonitor.getSystemIdleTime()
+      const reported = Date.now() - webIdleAtMs < IDLE_POLL_MS * 2 ? webIdleSeconds : 0
+      const idleSeconds = Math.max(powerMonitor.getSystemIdleTime(), reported)
       setScreensaver(s.folder !== null && idleSeconds >= s.idleMinutes * 60)
     }, IDLE_POLL_MS)
 
@@ -163,7 +164,13 @@ export function createKiosk(deps: {
     app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath })
   }
 
-  return { start, stop, listPhotos, pickFolder, previewScreensaver, setLaunchOnStartup }
+  /** Browser kiosks (server mode) report their own idle time; fresh reports win over the OS value. */
+  function reportIdle(seconds: number): void {
+    webIdleSeconds = seconds
+    webIdleAtMs = Date.now()
+  }
+
+  return { start, stop, listPhotos, pickFolder, previewScreensaver, setLaunchOnStartup, reportIdle }
 }
 
 export type Kiosk = ReturnType<typeof createKiosk>

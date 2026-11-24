@@ -16,12 +16,18 @@ export const personUpdateSchema = z.object({
   name: z.string().trim().min(1).max(60).optional(),
   color: hexColor.optional(),
   role: z.enum(['parent', 'child']).optional(),
-  sortOrder: z.number().int().optional()
+  sortOrder: z.number().int().optional(),
+  birthday: z
+    .string()
+    .regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'Birthday must be MM-DD')
+    .nullable()
+    .optional(),
+  birthYear: z.number().int().min(1900).max(2100).nullable().optional()
 })
 export const avatarSetSchema = z.object({
   personId: id,
-  // base64-encoded PNG/JPEG image bytes
-  data: z.string().min(1)
+  // base64-encoded PNG/JPEG image bytes — cap at ~2.9 MB base64 (2 MB decoded)
+  data: z.string().min(1).max(3_000_000)
 })
 
 export const calendarCreateSchema = z.object({
@@ -146,18 +152,20 @@ export const settingsPatchSchema = z.object({
   patch: z
     .object({
       weekStartsOn: z.union([z.literal(0), z.literal(1)]).optional(),
-      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'tasks', 'lists']).optional(),
+      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'tasks', 'lists', 'groceries']).optional(),
       homeLayout: z.array(homeTileSchema).max(24).optional(),
       timeFormat: z.enum(['12h', '24h']).optional(),
       temperatureUnit: z.enum(['f', 'c']).optional(),
       theme: z.enum(['light', 'dark', 'auto']).optional(),
       weather: z.object({ lat: z.number(), lon: z.number(), label: z.string() }).nullable().optional(),
       sleep: z.object({ enabled: z.boolean(), start: z.string(), end: z.string() }).optional(),
+      nightDimming: z.object({ enabled: z.boolean(), start: z.string(), end: z.string(), level: z.number().int().min(10).max(90) }).optional(),
       screensaver: z.object({ folder: z.string().nullable(), idleMinutes: z.number().int().min(1).max(120) }).optional(),
       launchOnStartup: z.boolean().optional(),
       companion: z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65535) }).optional(),
       syncIntervalMinutes: z.number().int().min(5).max(1440).optional(),
-      routinesDisplay: z.enum(['all', 'current']).optional()
+      routinesDisplay: z.enum(['all', 'current']).optional(),
+      groceries: z.object({ storeBaseUrl: z.string().trim().max(500) }).optional()
     })
     .strict()
 })
@@ -186,6 +194,18 @@ export const icsAddSchema = z.object({
   name: z.string().trim().min(1).max(80),
   color: hexColor
 })
+export const backupRestoreSchema = z.object({ name: z.string().trim().min(1).max(200) })
+export const wallnoteSetSchema = z.object({ text: z.string().max(2000) })
+export const recipeImportSchema = z.object({
+  url: z.string().trim().url().max(2000)
+})
+export const aiScanRemoveSchema = z.object({
+  batch: z.number().int().min(0),
+  index: z.number().int().min(0)
+})
+export const doorbellCameraSchema = z.object({
+  cameraId: id.nullable()
+})
 export const aiConfigSchema = z.object({
   endpointUrl: z.string().trim().min(8).max(2000),
   model: z.string().trim().min(1).max(200),
@@ -193,7 +213,8 @@ export const aiConfigSchema = z.object({
 })
 export const aiImportSchema = z.object({
   text: z.string().max(20_000),
-  images: z.array(z.string().min(1)).max(5),
+  // base64 attachments — 10 MB each keeps vision photos usable without unbounded buffering
+  images: z.array(z.string().min(1).max(14_000_000)).max(5),
   tz: z.string().min(1).max(64)
 })
 export const webdavConnectSchema = z.object({
@@ -231,6 +252,7 @@ export const choreCreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
   /** null = up for grabs */
   personId: id.nullable(),
+  rotationPersonIds: z.array(id).max(10).optional(),
   starsValue: z.number().int().min(0).max(99),
   recurrence: recurrenceSchema.nullish(),
   anchorDate: isoDate.optional(),
@@ -244,6 +266,7 @@ export const choreUpdateSchema = z.object({
   id,
   title: z.string().trim().min(1).max(120).optional(),
   personId: id.nullable().optional(),
+  rotationPersonIds: z.array(id).max(10).optional(),
   starsValue: z.number().int().min(0).max(99).optional(),
   recurrence: recurrenceSchema.nullable().optional(),
   anchorDate: isoDate.optional(),
@@ -321,8 +344,65 @@ export const recipeUpdateSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(30)).max(20).optional()
 })
 
+const unitSchema = z.string().trim().min(1).max(24).nullable()
+
+export const pantryAddSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  quantity: z.number().min(0).max(100000).optional(),
+  unit: unitSchema.optional(),
+  minQuantity: z.number().min(0).max(100000).optional(),
+  category: z.string().trim().min(1).max(60).nullable().optional()
+})
+
+export const pantryUpdateSchema = z.object({
+  id,
+  name: z.string().trim().min(1).max(120).optional(),
+  quantity: z.number().min(0).max(100000).optional(),
+  unit: unitSchema.optional(),
+  minQuantity: z.number().min(0).max(100000).optional(),
+  category: z.string().trim().min(1).max(60).nullable().optional()
+})
+
+export const pantryAdjustSchema = z.object({ id, delta: z.number().min(-100000).max(100000) })
+
+export const shoppingAddSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  quantity: z.number().min(0.5).max(100000).optional(),
+  unit: unitSchema.optional(),
+  note: z.string().trim().max(300).nullable().optional()
+})
+
+export const shoppingUpdateSchema = z.object({
+  id,
+  name: z.string().trim().min(1).max(120).optional(),
+  quantity: z.number().min(0.5).max(100000).optional(),
+  note: z.string().trim().max(300).nullable().optional()
+})
+
+export const scanReceiptSchema = z.object({ data: z.string().min(1).max(20_000_000) })
+
+export const applyReceiptSchema = z.object({
+  scanId: id,
+  items: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(120),
+        quantity: z.number().min(0).max(100000),
+        unit: unitSchema.optional()
+      })
+    )
+    .max(300)
+})
+
+export const scanIdSchema = z.object({ scanId: id })
+
+export const openFrysSchema = z.object({ query: z.string().trim().max(200).optional() })
+export const copyListSchema = z.object({ format: z.enum(['text', 'csv']) })
+
 export const citySearchSchema = z.object({ query: z.string().trim().min(2).max(80) })
 
 export const pinVerifySchema = z.object({ pin: z.string().regex(/^\d{4,8}$/) })
+
+export const idleReportSchema = z.object({ seconds: z.number().int().min(0).max(7 * 24 * 3600) })
 
 export const pinSetSchema = z.object({ pin: z.string().regex(/^\d{4,8}$/).nullable() })
