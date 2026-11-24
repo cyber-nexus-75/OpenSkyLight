@@ -1,10 +1,14 @@
+import { clipboard, dialog, shell } from 'electron'
 import { DateTime } from 'luxon'
 import type { ZodType } from 'zod'
 import { ZodError } from 'zod'
 import type { IpcChannel, IpcContract, IpcResult } from '@shared/ipc/contract'
 import * as s from '@shared/ipc/schemas'
+import { frysCsv, frysSearchUrl, frysTextList, type FrysLine } from '@shared/groceries/frys'
 import { AppError, notFound } from '../services/errors'
 import { decodeBase64Image } from '../services/avatarService'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { decodeReceiptImage } from '../services/receiptService'
 import type { SettingsService } from '../services/settingsService'
 import type { PeopleService } from '../services/peopleService'
 import type { AvatarService } from '../services/avatarService'
@@ -29,9 +33,15 @@ import type { CameraService } from '../services/cameraService'
 import type { UnifiService } from '../services/unifiService'
 import type { WebdavService } from '../services/webdavService'
 import type { AiService } from '../services/aiService'
+import type { AiEventDraft } from '@shared/types'
+import type { DoorbellService } from '../services/doorbellService'
+import type { BackupService } from '../services/backupService'
+import type { RecipeService } from '../services/recipeService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
 import { broadcast } from './bus'
+import type { GroceriesService } from '../services/groceriesService'
+import type { ReceiptService } from '../services/receiptService'
 
 export interface Services {
   settings: SettingsService
@@ -58,8 +68,13 @@ export interface Services {
   unifi: UnifiService
   webdav: WebdavService
   ai: AiService
+  doorbell: DoorbellService
+  backup: BackupService
+  recipeLibrary: RecipeService
   birdnet: BirdNetService
   companion: CompanionServer
+  groceries: GroceriesService
+  receipts: ReceiptService
 }
 
 /**
@@ -103,12 +118,18 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'webdav:disconnect',
   'ai:setConfig',
   'ai:clearConfig',
+  'doorbell:setCamera',
+  'doorbell:rotateToken',
+  'backup:restoreFromFile',
+  'backup:restoreFromRemote',
+  'recipes:importUrl',
+  'recipes:delete',
   'companion:issueToken',
   'companion:unpairAll'
 ])
 
 /** Channels that mutate data, mapped to the domain the renderer should refetch. */
-type MutationDomain = 'events' | 'people' | 'calendars' | 'settings' | 'lists' | 'meals' | 'chores'
+type MutationDomain = 'events' | 'people' | 'calendars' | 'settings' | 'lists' | 'meals' | 'chores' | 'groceries'
 const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'settings:set': 'settings',
   'people:create': 'people',
@@ -140,7 +161,19 @@ const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'chores:update': 'chores',
   'chores:delete': 'chores',
   'chores:complete': 'chores',
-  'chores:uncomplete': 'chores'
+  'chores:uncomplete': 'chores',
+  'pantry:add': 'groceries',
+  'pantry:update': 'groceries',
+  'pantry:adjust': 'groceries',
+  'pantry:remove': 'groceries',
+  'shopping:add': 'groceries',
+  'shopping:update': 'groceries',
+  'shopping:toggle': 'groceries',
+  'shopping:remove': 'groceries',
+  'shopping:clearChecked': 'groceries',
+  'shopping:addLowStock': 'groceries',
+  'groceries:scanReceipt': 'groceries',
+  'groceries:applyReceipt': 'groceries'
 }
 
 interface ChannelEntry {
@@ -324,6 +357,44 @@ export function buildChannelTable(services: Services, version: string): ChannelT
   handle('meals:getRange', s.mealsRangeSchema, (req) => services.meals.getRange(req.start, req.end))
   handle('meals:set', s.mealSetSchema, (req) => services.meals.set(req.date, req.slot, req.text))
 
+  handle('groceries:getState', null, () => services.groceries.getState())
+  handle('pantry:add', s.pantryAddSchema, (req) =>
+    services.groceries.pantryAdd({ ...req, source: 'manual' })
+  )
+  handle('pantry:update', s.pantryUpdateSchema, (req) => services.groceries.pantryUpdate(req))
+  handle('pantry:adjust', s.pantryAdjustSchema, (req) => services.groceries.pantryAdjust(req.id, req.delta))
+  handle('pantry:remove', s.idSchema, (req) => services.groceries.pantryRemove(req.id))
+  handle('shopping:add', s.shoppingAddSchema, (req) => services.groceries.shoppingAdd(req))
+  handle('shopping:update', s.shoppingUpdateSchema, (req) => services.groceries.shoppingUpdate(req))
+  handle('shopping:toggle', s.idSchema, (req) => services.groceries.shoppingToggle(req.id))
+  handle('shopping:remove', s.idSchema, (req) => services.groceries.shoppingRemove(req.id))
+  handle('shopping:clearChecked', null, () => services.groceries.shoppingClearChecked())
+  handle('shopping:addLowStock', null, () => services.groceries.shoppingAddLowStock())
+  handle('groceries:scanReceipt', s.scanReceiptSchema, async (req) => {
+    const bytes = decodeReceiptImage(req.data)
+    return services.receipts.scan(bytes)
+  })
+  handle('groceries:applyReceipt', s.applyReceiptSchema, (req) => services.groceries.applyReceipt(req.scanId, req.items))
+  handle('groceries:listReceipts', null, () => services.groceries.listReceipts())
+  handle('groceries:receiptDetail', s.scanIdSchema, (req) => services.receipts.getScanDetail(req.scanId))
+  handle('groceries:receiptImage', s.scanIdSchema, (req) => ({ dataUrl: services.receipts.getImageDataUrl(req.scanId) }))
+  handle('groceries:openFrys', s.openFrysSchema, (req) => {
+    const base = services.settings.getAll().groceries.storeBaseUrl
+    const url = req.query ? frysSearchUrl(base, req.query) : frysSearchUrl(base, '')
+    void shell.openExternal(url)
+    return { url }
+  })
+  handle('groceries:copyList', s.copyListSchema, (req) => {
+    const base = services.settings.getAll().groceries.storeBaseUrl
+    const lines: FrysLine[] = services.groceries
+      .getState()
+      .shopping.filter((i) => !i.checked)
+      .map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit }))
+    const text = req.format === 'csv' ? frysCsv(base, lines) : frysTextList(lines)
+    clipboard.writeText(text)
+    return { text }
+  })
+
   handle('rss:getFeed', s.rssFeedSchema, (req) => services.rss.getFeed(req.feedId))
 
   handle('birdnet:getDetections', s.birdnetUrlSchema, (req) => services.birdnet.getDetections(req.url))
@@ -346,11 +417,120 @@ export function buildChannelTable(services: Services, version: string): ChannelT
   handle('webdav:disconnect', null, () => services.webdav.disconnect())
   handle('webdav:syncNow', null, async () => ({ changed: await services.webdav.pull() }))
   handle('ai:getStatus', null, () => services.ai.getStatus())
+  handle('recipes:list', null, () => services.recipeLibrary.list())
+  handle('recipes:importUrl', s.recipeImportSchema, (req) => services.recipeLibrary.importUrl(req.url))
+  handle('recipes:delete', s.idSchema, (req) => services.recipeLibrary.remove(req.id))
+  handle('aiScan:getPending', null, () => {
+    const raw = services.settings.getRaw('aiScan.pending')
+    try {
+      return (raw ? JSON.parse(raw) : []) as { drafts: AiEventDraft[]; source: string }[]
+    } catch {
+      return []
+    }
+  })
+  handle('aiScan:clear', null, () => services.settings.setRaw('aiScan.pending', '[]'))
+  handle('aiScan:removeDraft', s.aiScanRemoveSchema, (req) => {
+    const raw = services.settings.getRaw('aiScan.pending')
+    try {
+      const pending = (raw ? JSON.parse(raw) : []) as { drafts: unknown[]; source: string }[]
+      const batch = pending[req.batch]
+      if (batch) {
+        batch.drafts.splice(req.index, 1)
+        const cleaned = pending.filter((b) => b.drafts.length > 0)
+        services.settings.setRaw('aiScan.pending', JSON.stringify(cleaned))
+      }
+    } catch {
+      services.settings.setRaw('aiScan.pending', '[]')
+    }
+  })
   handle('ai:setConfig', s.aiConfigSchema, (req) => services.ai.setConfig(req))
   handle('ai:clearConfig', null, () => services.ai.clearConfig())
   handle('ai:importEvents', s.aiImportSchema, async (req) => ({
     drafts: await services.ai.importEvents(req)
   }))
+  handle('backup:exportToFile', null, async () => {
+    const file = services.backup.exportBackup()
+    const path = `openskylight-backup-${DateTime.now().toFormat('yyyyMMdd-HHmm')}.json`
+    const result = await dialog.showSaveDialog({
+      title: 'Save backup',
+      defaultPath: path,
+      filters: [{ name: 'OpenSkyLight backup', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) throw new AppError('CANCELLED', 'Export cancelled')
+    writeFileSync(result.filePath, JSON.stringify(file, null, 2))
+    return { path: result.filePath }
+  })
+  handle('backup:restoreFromFile', null, async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose a backup to restore',
+      filters: [{ name: 'OpenSkyLight backup', extensions: ['json'] }],
+      properties: ['openFile']
+    })
+    if (result.canceled || result.filePaths.length === 0) throw new AppError('CANCELLED', 'Restore cancelled')
+    const raw = JSON.parse(readFileSync(result.filePaths[0], 'utf8'))
+    const counts = services.backup.restoreBackup(raw)
+    broadcast('push:dataChanged', { domain: 'events' })
+    broadcast('push:dataChanged', { domain: 'people' })
+    broadcast('push:dataChanged', { domain: 'chores' })
+    broadcast('push:dataChanged', { domain: 'calendars' })
+    broadcast('push:dataChanged', { domain: 'settings' })
+    return counts
+  })
+  handle('backup:uploadNow', null, async () => {
+    const file = services.backup.exportBackup()
+    const fileName = `openskylight-backup-${DateTime.now().toFormat('yyyyMMdd-HHmm')}.json`
+    await services.webdav.uploadFile(fileName, Buffer.from(JSON.stringify(file)))
+    return { fileName }
+  })
+  handle('backup:listRemote', null, async () => {
+    const files = await services.webdav.listBackups()
+    return files.sort((a, b) => b.name.localeCompare(a.name)).slice(0, 30)
+  })
+  handle('backup:restoreFromRemote', s.backupRestoreSchema, async (req) => {
+    const bytes = await services.webdav.downloadBackup(req.name)
+    const raw = JSON.parse(bytes.toString('utf8'))
+    const counts = services.backup.restoreBackup(raw)
+    broadcast('push:dataChanged', { domain: 'events' })
+    broadcast('push:dataChanged', { domain: 'people' })
+    broadcast('push:dataChanged', { domain: 'chores' })
+    broadcast('push:dataChanged', { domain: 'calendars' })
+    broadcast('push:dataChanged', { domain: 'settings' })
+    return counts
+  })
+  handle('backup:getStatus', null, () => services.backup.autoStatus())
+  handle('wallnote:get', null, () => {
+    const raw = services.settings.getRaw('wallnote.v1')
+    if (!raw) return { text: '', updatedAt: null }
+    try {
+      return JSON.parse(raw) as { text: string; updatedAt: string }
+    } catch {
+      return { text: '', updatedAt: null }
+    }
+  })
+  handle('wallnote:set', s.wallnoteSetSchema, (req) => {
+    const updatedAt = new Date().toISOString()
+    services.settings.setRaw('wallnote.v1', JSON.stringify({ text: req.text, updatedAt }))
+    broadcast('push:wallnoteChanged', { text: req.text, updatedAt })
+    return { text: req.text, updatedAt }
+  })
+  handle('doorbell:getStatus', null, () => services.doorbell.getStatus())
+  handle('doorbell:setCamera', s.doorbellCameraSchema, (req) => {
+    // if the chosen camera came from UniFi Protect, remember its native id for snapshots
+    let unifiId: string | null | undefined = undefined
+    if (req.cameraId) {
+      const raw = services.settings.getRaw('unifi.imports.v1')
+      try {
+        const map = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+        unifiId = Object.entries(map).find(([, localId]) => localId === req.cameraId)?.[0] ?? null
+      } catch {
+        unifiId = null
+      }
+    } else {
+      unifiId = null
+    }
+    return services.doorbell.setCamera(req.cameraId, unifiId)
+  })
+  handle('doorbell:rotateToken', null, () => services.doorbell.rotateToken())
 
   handle('weather:get', null, () => services.weather.get())
   handle('weather:searchCity', s.citySearchSchema, (req) => services.weather.searchCity(req.query))

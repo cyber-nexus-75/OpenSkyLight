@@ -14,6 +14,8 @@ import {
   TodayEventsTile,
   WeatherTile,
   WeekAgendaTile,
+  BirthdaysTile,
+  WallNoteTile,
   type TileProps
 } from './tiles'
 
@@ -96,5 +98,15 @@ export const TILE_REGISTRY: Record<HomeTileType, TileMeta> = {
     label: 'Timers',
     description: 'Countdown timers — set by tap or voice',
     component: TimerTile
+  },
+  birthdays: {
+    label: 'Birthdays',
+    description: 'Upcoming birthdays with countdowns',
+    component: BirthdaysTile
+  },
+  wallnote: {
+    label: 'Note',
+    description: 'A shared family whiteboard — editable here and from the phone',
+    component: WallNoteTile
   }
 }

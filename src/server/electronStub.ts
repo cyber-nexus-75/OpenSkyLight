@@ -103,7 +103,14 @@ export const powerSaveBlocker = {
 export const dialog = {
   showOpenDialog(_options: unknown): Promise<{ canceled: boolean; filePaths: string[] }> {
     return Promise.resolve({ canceled: true, filePaths: [] })
+  },
+  showSaveDialog(_options: unknown): Promise<{ canceled: boolean; filePath?: string }> {
+    return Promise.resolve({ canceled: true })
   }
+}
+
+export const clipboard = {
+  writeText(_text: string): void {}
 }
 
 export const shell = {

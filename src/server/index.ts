@@ -22,9 +22,16 @@ import { createKiosk } from '../main/kiosk/kiosk'
 import { createUpdater } from '../main/updater'
 import { createRssService } from '../main/services/rssService'
 import { createCameraService } from '../main/services/cameraService'
-import { createUnifiService } from '../main/services/unifiService'
+import { createUnifiService, decryptSecret, fetchSnapshot } from '../main/services/unifiService'
 import { createWebdavService } from '../main/services/webdavService'
 import { createAiService } from '../main/services/aiService'
+import { createDoorbellService } from '../main/services/doorbellService'
+import { createBackupService } from '../main/services/backupService'
+import { createAiScanService } from '../main/services/aiScanService'
+import { createRecipeService } from '../main/services/recipeService'
+import { createGroceriesService } from '../main/services/groceriesService'
+import { createReceiptService } from '../main/services/receiptService'
+import { AppError } from '../main/services/errors'
 import { createBirdNetService } from '../main/services/birdnetService'
 import { createGoogleAuth, type GoogleAuthHooks } from '../main/sync/googleAuth'
 import { createGoogleSync } from '../main/sync/googleSync'
@@ -69,16 +76,44 @@ const token = process.env.OSL_SERVER_TOKEN?.trim() || undefined
 const publicBaseUrl =
   process.env.OSL_PUBLIC_URL?.trim() || `http://${pickLanAddresses()[0] ?? 'localhost'}:${port}`
 
-const { db } = openDatabase(join(dataDir, 'openskylight.db'))
+const { db, sqlite } = openDatabase(join(dataDir, 'openskylight.db'))
 const deviceTz = (): string => DateTime.local().zoneName ?? 'UTC'
 
 const settings = createSettingsService(db)
+const backupService = createBackupService({
+  sqlite,
+  getAllSettings: () => settings.getAll() as unknown as Record<string, unknown>,
+  getRaw: (key) => settings.getRaw(key),
+  setRaw: (key, value) => settings.setRaw(key, value)
+})
 const avatars = createAvatarService({ rootDir: dataDir })
 const webdavService = createWebdavService({
   settings,
   cacheDir: join(dataDir, 'screensaver-cache')
 })
 const aiService = createAiService({ settings })
+const aiScanService = createAiScanService({
+  settings,
+  ai: aiService,
+  webdav: webdavService,
+  onDrafts: (drafts, source) => {
+    const raw = settings.getRaw('aiScan.pending') ?? '[]'
+    try {
+      const pending = JSON.parse(raw) as { drafts: unknown[]; source: string }[]
+      pending.push({ drafts, source })
+      settings.setRaw('aiScan.pending', JSON.stringify(pending.slice(-20)))
+    } catch {
+      settings.setRaw('aiScan.pending', JSON.stringify([{ drafts, source }]))
+    }
+    broadcast('push:aiDrafts', { count: drafts.length, source })
+  }
+})
+const doorbellService = createDoorbellService({
+  settings,
+  port: () => companion.boundPort() ?? settings.getAll().companion.port
+})
+const groceriesService = createGroceriesService(db)
+const receiptService = createReceiptService({ rootDir: dataDir, db })
 const kiosk = createKiosk({
   settings,
   broadcast,
@@ -119,6 +154,11 @@ const syncManager = createSyncManager({
   google: googleSync,
   caldav: caldavSync,
   webdav: webdavService,
+  backup: {
+    autoBackup: () =>
+      backupService.autoBackup((fileName, bytes) => webdavService.uploadFile(fileName, bytes))
+  },
+  aiScan: { scanNow: () => aiScanService.scanNow() },
   outbox,
   ics: icsSync,
   settings,
@@ -133,7 +173,32 @@ const companion = createCompanionServer({
   version,
   staticRoot: join(__dirname, '../companion'),
   avatarBytes: (personId) => avatars.get(personId),
-  uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes)
+  uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes),
+  scanReceipt: (bytes) => receiptService.scan(bytes),
+  setAvatar: async (personId, bytes) => {
+    const result = await dispatch(services, channelTable, 'people:setAvatar', { personId, data: bytes.toString('base64') }, { gate: 'none' })
+    if (!result.ok) throw new AppError(result.error.code, result.error.message)
+  },
+  acceptDoorbellRing: (token) => doorbellService.acceptRing(token),
+  verifyDoorbellToken: (token) => doorbellService.verifyToken(token),
+  onDoorbellRing: () => {
+    broadcast('push:doorbellRing', { at: new Date().toISOString() })
+    const unifiId = doorbellService.unifiCameraId()
+    const unifiHost = settings.getRaw('unifi.host')
+    const unifiKeyEnc = settings.getRaw('unifi.apiKeyEnc')
+    if (unifiId && unifiHost && unifiKeyEnc) {
+      void (async () => {
+        try {
+          const apiKey = decryptSecret(unifiKeyEnc)
+          const bytes = await fetchSnapshot(unifiHost, apiKey, unifiId)
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+          await webdavService.uploadFile(`visitor-${stamp}.jpg`, bytes, { subfolder: 'doorbell' })
+        } catch {
+          // snapshot is a bonus, never a failure of the ring itself
+        }
+      })()
+    }
+  }
 })
 
 const services: Services = {
@@ -154,6 +219,7 @@ const services: Services = {
   rewards: createRewardsService(db, choresService),
   lists: createListsService(db),
   meals: createMealsService(db),
+  recipeLibrary: createRecipeService(db),
   kiosk,
   updater,
   rss: createRssService(),
@@ -161,8 +227,12 @@ const services: Services = {
   unifi: unifiService,
   webdav: webdavService,
   ai: aiService,
+  doorbell: doorbellService,
+  backup: backupService,
   birdnet: createBirdNetService(),
-  companion
+  companion,
+  groceries: groceriesService,
+  receipts: receiptService
 }
 channelTable = buildChannelTable(services, version)
 

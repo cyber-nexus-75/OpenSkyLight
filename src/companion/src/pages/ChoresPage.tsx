@@ -22,7 +22,9 @@ export function ChoresPage() {
     const ctx = canvas.getContext('2d')!
     ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256)
     bitmap.close()
-    avatarMutation.mutate({ personId: person.id, data: canvas.toDataURL('image/png').split(',')[1]! })
+    canvas.toBlob((blob) => {
+      if (blob) blob.arrayBuffer().then((buf) => avatarMutation.mutate({ personId: person.id, bytes: buf }))
+    }, 'image/png')
   }
   const [showForm, setShowForm] = useState(false)
   const [showManage, setShowManage] = useState(false)

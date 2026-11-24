@@ -218,10 +218,12 @@ export type AiService = ReturnType<typeof createAiService>
 const PNG = 'iVBORw0KGgo'
 const JPEG = '/9j/'
 const PDF = 'JVBERi'
+const WEBP = 'UklGR'
 
 function sniffKind(b64: string): string {
   if (b64.startsWith(PNG)) return 'image/png'
   if (b64.startsWith(JPEG)) return 'image/jpeg'
+  if (b64.startsWith(WEBP)) return 'image/webp'
   if (b64.startsWith(PDF)) return 'application/pdf'
   throw invalid('Attachments must be PNG, JPEG, WebP, or PDF')
 }
