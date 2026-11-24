@@ -1,6 +1,5 @@
 import type {
   AiEventDraft,
-  RecipeDto,
   AppSettings,
   AvatarSetInput,
   CalendarCreateInput,
@@ -14,19 +13,29 @@ import type {
   EventDeleteInput,
   EventDto,
   EventUpdateInput,
+  GroceriesStateDto,
   ListDto,
   ListItemDto,
   ListKind,
   MealSlotDto,
   MealSlotKind,
   OccurrenceDto,
+  PantryItemDto,
+  RecipeCreateInput,
+  RecipeDto,
+  RecipeUpdateInput,
   PersonCreateInput,
   PersonDto,
   PersonUpdateInput,
+  ReceiptScanDto,
+  ReceiptScanResultDto,
   RedemptionDto,
   RewardDto,
-  StarBalanceDto
+  ShoppingItemDto,
+  StarBalanceDto,
+  TaskItemDto
 } from '../types'
+import type { ParsedReceipt } from '../groceries/receiptParse'
 
 /**
  * The single source of truth for renderer <-> main communication.
@@ -130,7 +139,11 @@ export type IpcContract = {
   'chores:update': { req: ChoreUpdateInput; res: ChoreDto }
   'chores:delete': { req: { id: string }; res: void }
   'chores:getDay': { req: { date: string }; res: DayChoreDto[] }
-  'chores:complete': { req: { choreId: string; date: string }; res: { balance: number } }
+  'chores:getTasks': { req: { date: string }; res: TaskItemDto[] }
+  'chores:complete': {
+    req: { choreId: string; date: string; /** claimer for up-for-grabs chores */ personId?: string }
+    res: { balance: number }
+  }
   'chores:uncomplete': { req: { choreId: string; date: string }; res: { balance: number } }
 
   'stars:balances': { req: void; res: StarBalanceDto[] }
@@ -145,7 +158,63 @@ export type IpcContract = {
   'listItems:clearChecked': { req: { listId: string }; res: void }
 
   'meals:getRange': { req: { start: string; end: string }; res: MealSlotDto[] }
-  'meals:set': { req: { date: string; slot: MealSlotKind; text: string | null }; res: void }
+  'meals:set': {
+    req: {
+      date: string
+      slot: MealSlotKind
+      text: string | null
+      recipeId?: string | null
+      personIds?: string[]
+    }
+    res: void
+  }
+  /** drag-and-drop: move a meal to another day/slot (swaps if occupied) */
+  'meals:move': { req: { id: string; date: string; slot: MealSlotKind }; res: void }
+  /** append a linked recipe's ingredients to a grocery list (deduped) */
+  'meals:addIngredients': { req: { mealSlotId: string; listId?: string }; res: { added: number } }
+
+  'recipes:list': { req: void; res: RecipeDto[] }
+  'recipes:create': { req: RecipeCreateInput; res: RecipeDto }
+  'recipes:update': { req: RecipeUpdateInput; res: RecipeDto }
+  'recipes:importUrl': { req: { url: string }; res: RecipeDto }
+  'recipes:delete': { req: { id: string }; res: void }
+
+  'groceries:getState': { req: void; res: GroceriesStateDto }
+  'pantry:add': {
+    req: { name: string; quantity?: number; unit?: string | null; minQuantity?: number; category?: string | null }
+    res: PantryItemDto
+  }
+  'pantry:update': {
+    req: { id: string; name?: string; quantity?: number; unit?: string | null; minQuantity?: number; category?: string | null }
+    res: PantryItemDto
+  }
+  /** relative quantity change (voice: "used 2 eggs"); floored at 0 */
+  'pantry:adjust': { req: { id: string; delta: number }; res: PantryItemDto }
+  'pantry:remove': { req: { id: string }; res: void }
+  'shopping:add': { req: { name: string; quantity?: number; unit?: string | null; note?: string | null }; res: ShoppingItemDto }
+  'shopping:update': { req: { id: string; name?: string; quantity?: number; note?: string | null }; res: ShoppingItemDto }
+  'shopping:toggle': { req: { id: string }; res: void }
+  'shopping:remove': { req: { id: string }; res: void }
+  'shopping:clearChecked': { req: void; res: void }
+  /** push every low-stock pantry item onto the shopping list */
+  'shopping:addLowStock': { req: void; res: { added: number } }
+  /** OCR a receipt photo (base64 PNG/JPEG); items are NOT applied until groceries:applyReceipt */
+  'groceries:scanReceipt': { req: { data: string }; res: ReceiptScanResultDto }
+  /** confirm (possibly edited) parsed receipt items into the pantry */
+  'groceries:applyReceipt': {
+    req: { scanId: string; items: { name: string; quantity: number; unit?: string | null }[] }
+    res: { updated: number }
+  }
+  'groceries:listReceipts': { req: void; res: ReceiptScanDto[] }
+  'groceries:receiptDetail': {
+    req: { scanId: string }
+    res: { scan: ReceiptScanDto; rawText: string; parsed: ParsedReceipt }
+  }
+  'groceries:receiptImage': { req: { scanId: string }; res: { dataUrl: string | null } }
+  /** open the store's product search (or store home when query is empty) in the system browser */
+  'groceries:openFrys': { req: { query?: string }; res: { url: string } }
+  /** build the order export (text or CSV) from unchecked shopping items and put it on the clipboard */
+  'groceries:copyList': { req: { format: 'text' | 'csv' }; res: { text: string } }
 
   'rewards:list': { req: void; res: RewardDto[] }
   'rewards:create': { req: { title: string; costStars: number }; res: RewardDto }
@@ -243,9 +312,6 @@ export type IpcContract = {
   }
   'doorbell:setCamera': { req: { cameraId: string | null }; res: { webhookToken: string; webhookUrl: string } }
   'doorbell:rotateToken': { req: void; res: { webhookToken: string; webhookUrl: string } }
-  'recipes:list': { req: void; res: RecipeDto[] }
-  'recipes:importUrl': { req: { url: string }; res: RecipeDto }
-  'recipes:delete': { req: { id: string }; res: void }
   'aiScan:getPending': {
     req: void
     res: { drafts: AiEventDraft[]; source: string }[]
@@ -257,6 +323,8 @@ export type IpcContract = {
     res: { drafts: AiEventDraft[] }
   }
   'kiosk:previewScreensaver': { req: void; res: void }
+  /** Web-kiosk clients report their own idle time so the screensaver works without OS power APIs. */
+  'kiosk:reportIdle': { req: { seconds: number }; res: void }
 
   'companion:getStatus': {
     req: void
@@ -300,6 +368,7 @@ export const ALLOWED_CHANNEL_PREFIXES = [
   'calendars:',
   'events:',
   'google:',
+  'caldav:',
   'ics:',
   'sync:',
   'weather:',
@@ -310,10 +379,21 @@ export const ALLOWED_CHANNEL_PREFIXES = [
   'lists:',
   'listItems:',
   'meals:',
+  'groceries:',
+  'pantry:',
+  'shopping:',
   'screensaver:',
   'kiosk:',
   'rss:',
   'camera:',
+  'unifi:',
+  'webdav:',
+  'ai:',
+  'aiScan:',
+  'recipes:',
+  'doorbell:',
+  'backup:',
+  'wallnote:',
   'companion:',
   'birdnet:'
 ] as const

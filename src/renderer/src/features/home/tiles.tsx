@@ -164,16 +164,38 @@ export function WeatherTile({ tile, compact }: TileProps) {
 export function ChoresProgressTile({ compact }: TileProps) {
   const { data: chores = [] } = useChoresDay(today())
   const { data: people = [] } = usePeople()
-  const withChores = people.filter((p) => chores.some((c) => c.personId === p.id))
+  const withChores = people.filter((p) => chores.some((c) => !c.upForGrabs && c.personId === p.id))
+  const grabs = chores.filter((c) => c.upForGrabs)
+  const grabDone = grabs.filter((c) => c.completed).length
+  const grabPct = grabs.length === 0 ? 0 : Math.round((grabDone / grabs.length) * 100)
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <TileTitle>Chores today</TileTitle>
-      {withChores.length === 0 ? (
+      {withChores.length === 0 && grabs.length === 0 ? (
         <Placeholder>No chores today</Placeholder>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 overflow-hidden">
+          {grabs.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-paper-deep text-[10px] font-extrabold text-ink-soft">
+                ★
+              </span>
+              <span className="min-w-0 flex-1">
+                {!compact && <span className="block truncate text-xs font-bold">Up for grabs</span>}
+                <span className="block h-2.5 overflow-hidden rounded-full bg-paper-deep">
+                  <span
+                    className="block h-full rounded-full bg-[#8E4EC6] transition-all"
+                    style={{ width: `${grabPct}%` }}
+                  />
+                </span>
+              </span>
+              <span className="shrink-0 text-xs font-extrabold text-ink-soft">
+                {grabDone === grabs.length ? <CheckIcon size={16} className="text-[#46A758]" /> : `${grabDone}/${grabs.length}`}
+              </span>
+            </div>
+          )}
           {withChores.map((p) => {
-            const mine = chores.filter((c) => c.personId === p.id)
+            const mine = chores.filter((c) => !c.upForGrabs && c.personId === p.id)
             const done = mine.filter((c) => c.completed).length
             const pct = mine.length === 0 ? 0 : Math.round((done / mine.length) * 100)
             return (

@@ -1,13 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
-  AvatarSetInput,
   ChoreCreateInput,
   ChoreUpdateInput,
   EventCreateInput,
   EventDeleteInput,
   EventUpdateInput
 } from '@shared/types'
-import { rpc } from './client'
+import { rpc, uploadAvatar } from './client'
 
 /** Phone tabs get suspended constantly — focus/reconnect refetch is the real
  * freshness mechanism; the 20s interval covers a phone left on the counter. */
@@ -35,6 +34,10 @@ export function useChoresDay(date: string) {
 
 export function useChores() {
   return useQuery({ queryKey: ['chores'], queryFn: () => rpc('chores:list', undefined), ...LIVE })
+}
+
+export function useChoresTasks(date: string) {
+  return useQuery({ queryKey: ['choresTasks', date], queryFn: () => rpc('chores:getTasks', { date }), ...LIVE })
 }
 
 export function useBalances() {
@@ -78,19 +81,32 @@ export function useListMutations() {
 export function useMealMutations() {
   return {
     set: useInvalidatingMutation(
-      (input: { date: string; slot: 'breakfast' | 'lunch' | 'dinner' | 'snack'; text: string | null }) =>
-        rpc('meals:set', input),
+      (input: Parameters<typeof rpc<'meals:set'>>[1]) => rpc('meals:set', input),
       [['meals']]
+    ),
+    move: useInvalidatingMutation((input: Parameters<typeof rpc<'meals:move'>>[1]) => rpc('meals:move', input), [
+      ['meals']
+    ]),
+    addIngredients: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'meals:addIngredients'>>[1]) => rpc('meals:addIngredients', input),
+      [['meals'], ['lists']]
     )
   }
 }
 
+export function useRecipes() {
+  return useQuery({ queryKey: ['recipes'], queryFn: () => rpc('recipes:list', undefined), ...LIVE })
+}
+
 export function useChoreMutations() {
-  const keys = [['choresDay'], ['chores'], ['balances']]
+  const keys = [['choresDay'], ['choresTasks'], ['chores'], ['balances']]
   return {
     create: useInvalidatingMutation((input: ChoreCreateInput) => rpc('chores:create', input), keys),
     update: useInvalidatingMutation((input: ChoreUpdateInput) => rpc('chores:update', input), keys),
-    complete: useInvalidatingMutation((input: { choreId: string; date: string }) => rpc('chores:complete', input), keys),
+    complete: useInvalidatingMutation(
+      (input: { choreId: string; date: string; personId?: string }) => rpc('chores:complete', input),
+      keys
+    ),
     uncomplete: useInvalidatingMutation(
       (input: { choreId: string; date: string }) => rpc('chores:uncomplete', input),
       keys
@@ -139,7 +155,11 @@ export function useAiImport() {
 }
 
 export function useAvatarMutation() {
-  return useInvalidatingMutation((input: AvatarSetInput) => rpc('people:setAvatar', input), [['people']])
+  // raw bytes over the dedicated large-body route — a 256px PNG busts the 64 KB RPC cap
+  return useInvalidatingMutation(
+    (input: { personId: string; bytes: ArrayBuffer }) => uploadAvatar(input.personId, input.bytes),
+    [['people']]
+  )
 }
 
 export function useWallNote() {
@@ -157,10 +177,6 @@ export function useWallNoteMutation() {
   )
 }
 
-export function useRecipes() {
-  return useQuery({ queryKey: ['recipes'], queryFn: () => rpc('recipes:list', undefined), ...LIVE })
-}
-
 export function useRecipeMutations() {
   return {
     importUrl: useInvalidatingMutation(
@@ -168,5 +184,42 @@ export function useRecipeMutations() {
       [['recipes']]
     ),
     remove: useInvalidatingMutation((input: { id: string }) => rpc('recipes:delete', input), [['recipes']])
+  }
+}
+
+export function useGroceries() {
+  return useQuery({ queryKey: ['groceries'], queryFn: () => rpc('groceries:getState', undefined), ...LIVE })
+}
+
+export function useReceipts() {
+  return useQuery({ queryKey: ['groceries', 'receipts'], queryFn: () => rpc('groceries:listReceipts', undefined), ...LIVE })
+}
+
+export function useGroceriesMutations() {
+  const keys = [['groceries']]
+  return {
+    pantryAdd: useInvalidatingMutation((input: Parameters<typeof rpc<'pantry:add'>>[1]) => rpc('pantry:add', input), keys),
+    pantryUpdate: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'pantry:update'>>[1]) => rpc('pantry:update', input),
+      keys
+    ),
+    pantryAdjust: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'pantry:adjust'>>[1]) => rpc('pantry:adjust', input),
+      keys
+    ),
+    pantryRemove: useInvalidatingMutation((input: { id: string }) => rpc('pantry:remove', input), keys),
+    shoppingAdd: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'shopping:add'>>[1]) => rpc('shopping:add', input),
+      keys
+    ),
+    shoppingToggle: useInvalidatingMutation((input: { id: string }) => rpc('shopping:toggle', input), keys),
+    shoppingRemove: useInvalidatingMutation((input: { id: string }) => rpc('shopping:remove', input), keys),
+    shoppingClear: useInvalidatingMutation(() => rpc('shopping:clearChecked', undefined), keys),
+    addLowStock: useInvalidatingMutation(() => rpc('shopping:addLowStock', undefined), keys),
+    applyReceipt: useInvalidatingMutation(
+      (input: Parameters<typeof rpc<'groceries:applyReceipt'>>[1]) => rpc('groceries:applyReceipt', input),
+      keys
+    ),
+    receiptDetail: useMutation({ mutationFn: (scanId: string) => rpc('groceries:receiptDetail', { scanId }) })
   }
 }

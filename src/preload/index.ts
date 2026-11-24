@@ -1,38 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { ALLOWED_CHANNEL_PREFIXES } from '@shared/ipc/contract'
 
-const ALLOWED_INVOKE_PREFIXES = [
-  'app:',
-  'settings:',
-  'people:',
-  'calendars:',
-  'events:',
-  'google:',
-  'caldav:',
-  'ics:',
-  'sync:',
-  'weather:',
-  'auth:',
-  'chores:',
-  'stars:',
-  'rewards:',
-  'lists:',
-  'listItems:',
-  'meals:',
-  'screensaver:',
-  'kiosk:',
-  'rss:',
-  'camera:',
-  'unifi:',
-  'webdav:',
-  'ai:',
-  'aiScan:',
-  'recipes:',
-  'doorbell:',
-  'backup:',
-  'wallnote:',
-  'companion:',
-  'birdnet:'
-]
+const ALLOWED_INVOKE_PREFIXES = ALLOWED_CHANNEL_PREFIXES
 const PUSH_PREFIX = 'push:'
 
 export interface OslBridge {

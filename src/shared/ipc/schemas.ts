@@ -26,8 +26,8 @@ export const personUpdateSchema = z.object({
 })
 export const avatarSetSchema = z.object({
   personId: id,
-  // base64-encoded PNG/JPEG image bytes
-  data: z.string().min(1)
+  // base64-encoded PNG/JPEG image bytes — cap at ~2.9 MB base64 (2 MB decoded)
+  data: z.string().min(1).max(3_000_000)
 })
 
 export const calendarCreateSchema = z.object({
@@ -152,7 +152,7 @@ export const settingsPatchSchema = z.object({
   patch: z
     .object({
       weekStartsOn: z.union([z.literal(0), z.literal(1)]).optional(),
-      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'lists']).optional(),
+      defaultView: z.enum(['home', 'day', 'week', 'month', 'agenda', 'chores', 'tasks', 'lists', 'groceries']).optional(),
       homeLayout: z.array(homeTileSchema).max(24).optional(),
       timeFormat: z.enum(['12h', '24h']).optional(),
       temperatureUnit: z.enum(['f', 'c']).optional(),
@@ -163,7 +163,9 @@ export const settingsPatchSchema = z.object({
       screensaver: z.object({ folder: z.string().nullable(), idleMinutes: z.number().int().min(1).max(120) }).optional(),
       launchOnStartup: z.boolean().optional(),
       companion: z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65535) }).optional(),
-      syncIntervalMinutes: z.number().int().min(5).max(1440).optional()
+      syncIntervalMinutes: z.number().int().min(5).max(1440).optional(),
+      routinesDisplay: z.enum(['all', 'current']).optional(),
+      groceries: z.object({ storeBaseUrl: z.string().trim().max(500) }).optional()
     })
     .strict()
 })
@@ -211,7 +213,8 @@ export const aiConfigSchema = z.object({
 })
 export const aiImportSchema = z.object({
   text: z.string().max(20_000),
-  images: z.array(z.string().min(1)).max(5),
+  // base64 attachments — 10 MB each keeps vision photos usable without unbounded buffering
+  images: z.array(z.string().min(1).max(14_000_000)).max(5),
   tz: z.string().min(1).max(64)
 })
 export const webdavConnectSchema = z.object({
@@ -243,32 +246,44 @@ export const caldavCalendarPersonSchema = z.object({
   personId: id.nullable()
 })
 
-const routine = z.enum(['morning', 'evening']).nullable()
+const routine = z.enum(['morning', 'afternoon', 'evening']).nullable()
 
 export const choreCreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
-  personId: id,
+  /** null = up for grabs */
+  personId: id.nullable(),
   rotationPersonIds: z.array(id).max(10).optional(),
   starsValue: z.number().int().min(0).max(99),
   recurrence: recurrenceSchema.nullish(),
   anchorDate: isoDate.optional(),
-  routine: routine.optional()
+  routine: routine.optional(),
+  upForGrabs: z.boolean().optional(),
+  repeatAfter: z.boolean().optional(),
+  linkedChoreIds: z.array(id).max(20).optional()
 })
 
 export const choreUpdateSchema = z.object({
   id,
   title: z.string().trim().min(1).max(120).optional(),
-  personId: id.optional(),
+  personId: id.nullable().optional(),
   rotationPersonIds: z.array(id).max(10).optional(),
   starsValue: z.number().int().min(0).max(99).optional(),
   recurrence: recurrenceSchema.nullable().optional(),
   anchorDate: isoDate.optional(),
   routine: routine.optional(),
+  upForGrabs: z.boolean().optional(),
+  repeatAfter: z.boolean().optional(),
+  linkedChoreIds: z.array(id).max(20).optional(),
   active: z.boolean().optional()
 })
 
 export const choreDaySchema = z.object({ date: isoDate })
-export const choreCheckSchema = z.object({ choreId: id, date: isoDate })
+export const choreCheckSchema = z.object({
+  choreId: id,
+  date: isoDate,
+  /** claimer for up-for-grabs chores; ignored otherwise */
+  personId: id.optional()
+})
 
 export const rewardCreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -304,11 +319,90 @@ export const mealsRangeSchema = z.object({ start: isoDate, end: isoDate })
 export const mealSetSchema = z.object({
   date: isoDate,
   slot: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
-  text: z.string().trim().max(200).nullable()
+  text: z.string().trim().max(200).nullable(),
+  recipeId: id.nullable().optional(),
+  personIds: z.array(id).max(20).optional()
 })
+export const mealMoveSchema = z.object({
+  id,
+  date: isoDate,
+  slot: z.enum(['breakfast', 'lunch', 'dinner', 'snack'])
+})
+export const mealAddIngredientsSchema = z.object({ mealSlotId: id, listId: id.optional() })
+
+export const recipeCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  ingredients: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  instructions: z.string().max(4000).nullish(),
+  tags: z.array(z.string().trim().min(1).max(30)).max(20).optional()
+})
+export const recipeUpdateSchema = z.object({
+  id,
+  title: z.string().trim().min(1).max(120).optional(),
+  ingredients: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  instructions: z.string().max(4000).nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(30)).max(20).optional()
+})
+
+const unitSchema = z.string().trim().min(1).max(24).nullable()
+
+export const pantryAddSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  quantity: z.number().min(0).max(100000).optional(),
+  unit: unitSchema.optional(),
+  minQuantity: z.number().min(0).max(100000).optional(),
+  category: z.string().trim().min(1).max(60).nullable().optional()
+})
+
+export const pantryUpdateSchema = z.object({
+  id,
+  name: z.string().trim().min(1).max(120).optional(),
+  quantity: z.number().min(0).max(100000).optional(),
+  unit: unitSchema.optional(),
+  minQuantity: z.number().min(0).max(100000).optional(),
+  category: z.string().trim().min(1).max(60).nullable().optional()
+})
+
+export const pantryAdjustSchema = z.object({ id, delta: z.number().min(-100000).max(100000) })
+
+export const shoppingAddSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  quantity: z.number().min(0.5).max(100000).optional(),
+  unit: unitSchema.optional(),
+  note: z.string().trim().max(300).nullable().optional()
+})
+
+export const shoppingUpdateSchema = z.object({
+  id,
+  name: z.string().trim().min(1).max(120).optional(),
+  quantity: z.number().min(0.5).max(100000).optional(),
+  note: z.string().trim().max(300).nullable().optional()
+})
+
+export const scanReceiptSchema = z.object({ data: z.string().min(1).max(20_000_000) })
+
+export const applyReceiptSchema = z.object({
+  scanId: id,
+  items: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(120),
+        quantity: z.number().min(0).max(100000),
+        unit: unitSchema.optional()
+      })
+    )
+    .max(300)
+})
+
+export const scanIdSchema = z.object({ scanId: id })
+
+export const openFrysSchema = z.object({ query: z.string().trim().max(200).optional() })
+export const copyListSchema = z.object({ format: z.enum(['text', 'csv']) })
 
 export const citySearchSchema = z.object({ query: z.string().trim().min(2).max(80) })
 
 export const pinVerifySchema = z.object({ pin: z.string().regex(/^\d{4,8}$/) })
+
+export const idleReportSchema = z.object({ seconds: z.number().int().min(0).max(7 * 24 * 3600) })
 
 export const pinSetSchema = z.object({ pin: z.string().regex(/^\d{4,8}$/).nullable() })

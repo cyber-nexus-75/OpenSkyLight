@@ -7,18 +7,14 @@ import { createPeopleService } from './services/peopleService'
 import { createAvatarService } from './services/avatarService'
 import { createCalendarService } from './services/calendarService'
 import { createEventService } from './services/eventService'
-import {
-  buildChannelTable,
-  dispatch,
-  registerIpcHandlers,
-  broadcast,
-  type ChannelTable,
-  type Services
-} from './ipc/router'
+import { buildChannelTable, dispatch, type ChannelTable, type Services } from './ipc/router'
+import { registerIpcHandlers } from './ipc/electronIpc'
+import { addBroadcastSink, broadcast } from './ipc/bus'
 import { createCompanionTokens } from './companion/companionTokens'
 import { createCompanionServer } from './companion/companionServer'
 import { createMainWindow } from './window'
 import { createWeatherService } from './services/weatherService'
+import { AppError } from './services/errors'
 import { createAuthService } from './services/authService'
 import { createChoresService } from './services/choresService'
 import { createRewardsService } from './services/rewardsService'
@@ -43,6 +39,8 @@ import { createCalDavSync } from './sync/caldavSync'
 import { createOutboxWorker } from './sync/outboxWorker'
 import { createIcsSync } from './sync/icsSync'
 import { createSyncManager } from './sync/scheduler'
+import { createGroceriesService } from './services/groceriesService'
+import { createReceiptService } from './services/receiptService'
 
 // Test harnesses point this at a temp dir so smoke runs never touch real data
 if (process.env.OSL_USER_DATA) {
@@ -62,6 +60,9 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
+    addBroadcastSink((channel, payload) => {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, payload)
+    })
     const { db, sqlite } = openDatabase(join(app.getPath('userData'), 'openskylight.db'))
     const deviceTz = (): string => DateTime.local().zoneName ?? 'UTC'
 
@@ -113,6 +114,7 @@ if (!gotLock) {
     })
     app.on('will-quit', () => cameraService.shutdown())
     const choresService = createChoresService(db, deviceTz)
+    const listsService = createListsService(db)
     const googleAuth = createGoogleAuth(db, settings)
     const googleSync = createGoogleSync({ db, auth: googleAuth, deviceTz })
     const caldavAuth = createCalDavAuth({ db, settings })
@@ -141,6 +143,9 @@ if (!gotLock) {
       broadcast
     })
 
+    const groceriesService = createGroceriesService(db)
+    const receiptService = createReceiptService({ rootDir: app.getPath('userData'), db })
+
     // companion dispatches through the same channel table built below; the
     // closure resolves after boot, before any HTTP request can arrive
     let channelTable: ChannelTable
@@ -152,6 +157,19 @@ if (!gotLock) {
       staticRoot: join(__dirname, '../companion'),
       avatarBytes: (personId) => avatars.get(personId),
       uploadPhoto: (fileName, bytes) => webdavService.upload(fileName, bytes),
+      scanReceipt: (bytes) => receiptService.scan(bytes),
+      setAvatar: async (personId, bytes) => {
+        // the same validated people:setAvatar pipeline as the RPC route, just
+        // with the large-body limit — AppError codes surface to the HTTP layer
+        const result = await dispatch(
+          services,
+          channelTable,
+          'people:setAvatar',
+          { personId, data: bytes.toString('base64') },
+          { gate: 'none' }
+        )
+        if (!result.ok) throw new AppError(result.error.code, result.error.message)
+      },
       acceptDoorbellRing: (token) => doorbellService.acceptRing(token),
       verifyDoorbellToken: (token) => doorbellService.verifyToken(token),
       onDoorbellRing: () => {
@@ -192,8 +210,8 @@ if (!gotLock) {
       auth: createAuthService(settings),
       chores: choresService,
       rewards: createRewardsService(db, choresService),
-      lists: createListsService(db),
-      meals: createMealsService(db),
+      lists: listsService,
+      meals: createMealsService(db, listsService),
       recipeLibrary: createRecipeService(db),
       kiosk,
       updater,
@@ -205,9 +223,11 @@ if (!gotLock) {
       doorbell: doorbellService,
       backup: backupService,
       birdnet: createBirdNetService(),
-      companion
+      companion,
+      groceries: groceriesService,
+      receipts: receiptService
     }
-    channelTable = buildChannelTable(services)
+    channelTable = buildChannelTable(services, app.getVersion())
     registerIpcHandlers(services, channelTable)
     createMainWindow()
     syncManager.start()

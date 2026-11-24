@@ -86,10 +86,17 @@ try {
       inv('chores:create', { title, personId: p, starsValue: stars, recurrence: { freq: 'daily' }, routine })
     const c1 = await chore('Make bed', emma.id, 1, 'morning')
     await chore('Brush teeth', emma.id, 1, 'morning')
+    await chore('Homework time', emma.id, 2, 'afternoon')
     const c2 = await chore('Feed the dog', emma.id, 2, 'evening')
     const c3 = await chore('Make bed', leo.id, 1, 'morning')
     await chore('Set the table', leo.id, 2, 'evening')
     await chore('Take out trash', leo.id, 2, 'evening')
+    // up-for-grabs chore, claimed by Leo
+    const grab = await inv('chores:create', {
+      title: 'Walk the dog', personId: null, starsValue: 3,
+      recurrence: { freq: 'daily' }, upForGrabs: true
+    })
+    await inv('chores:complete', { choreId: grab.id, date: todayIso, personId: leo.id })
     await inv('chores:complete', { choreId: c1.id, date: todayIso })
     await inv('chores:complete', { choreId: c2.id, date: todayIso })
     await inv('chores:complete', { choreId: c3.id, date: todayIso })
@@ -122,6 +129,14 @@ try {
     await meal(1, 'dinner', 'Sheet-pan salmon')
     await meal(2, 'dinner', 'Pizza Friday')
     await meal(-1, 'dinner', 'Spaghetti')
+
+    // a recipe-linked lunch assigned to Emma (shows the person dot on the meal strip)
+    const tacos = await inv('recipes:create', {
+      title: 'Taco night', ingredients: ['Tortillas', 'Cheese', 'Salsa', 'Ground beef'], tags: ['dinner', 'kid-friendly']
+    })
+    await inv('meals:set', {
+      date: dayIso(new Date()), slot: 'lunch', text: null, recipeId: tacos.id, personIds: [emma.id]
+    })
 
     // avatars so the shots show real photos (solid-color circles generated on canvas)
     const avatar = (person, hex) => {

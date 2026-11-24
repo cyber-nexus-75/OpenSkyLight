@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, blob, index, primaryKey } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, blob, index, primaryKey } from 'drizzle-orm/sqlite-core'
 
 /** All timestamps are UTC ISO-8601 strings; calendar dates are YYYY-MM-DD; booleans are 0/1 ints. */
 
@@ -120,18 +120,34 @@ export const chores = sqliteTable('chores', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   icon: text('icon'),
+  /** null when upForGrabs — anyone may claim it */
   personId: text('person_id').references(() => people.id),
   /** rotation: 2+ person ids alternating by ISO week; null = fixed personId */
   rotationPersonIds: text('rotation_person_ids'),
   starsValue: integer('stars_value').notNull().default(1),
   scheduleRrule: text('schedule_rrule'),
   dueDate: text('due_date'),
-  routine: text('routine', { enum: ['morning', 'evening'] }),
+  routine: text('routine', { enum: ['morning', 'afternoon', 'evening'] }),
+  /** claimable by any family member; stars go to whoever checks it off */
+  upForGrabs: integer('up_for_grabs', { mode: 'boolean' }).notNull().default(false),
+  /** one-time chore that comes back every day after completion */
+  repeatAfter: integer('repeat_after', { mode: 'boolean' }).notNull().default(false),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
   deletedAt: text('deleted_at')
 })
+
+export const choreLinks = sqliteTable(
+  'chore_links',
+  {
+    id: text('id').primaryKey(),
+    choreId: text('chore_id').notNull().references(() => chores.id),
+    linkedChoreId: text('linked_chore_id').notNull().references(() => chores.id),
+    createdAt: text('created_at').notNull()
+  },
+  (t) => [index('idx_chore_links').on(t.choreId), index('idx_chore_links_linked').on(t.linkedChoreId)]
+)
 
 export const choreCompletions = sqliteTable(
   'chore_completions',
@@ -212,12 +228,73 @@ export const mealSlots = sqliteTable(
     date: text('date').notNull(),
     slot: text('slot', { enum: ['breakfast', 'lunch', 'dinner', 'snack'] }).notNull(),
     recipeId: text('recipe_id').references(() => recipes.id),
-    freeText: text('free_text')
+    freeText: text('free_text'),
+    sortOrder: integer('sort_order').notNull().default(0)
   },
   (t) => [index('idx_meal_slots_date').on(t.date)]
+)
+
+export const mealSlotPeople = sqliteTable(
+  'meal_slot_people',
+  {
+    mealSlotId: text('meal_slot_id').notNull().references(() => mealSlots.id, { onDelete: 'cascade' }),
+    personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' })
+  },
+  (t) => [primaryKey({ columns: [t.mealSlotId, t.personId] })]
 )
 
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull() // JSON
+})
+
+/** Pantry inventory: what we have and how much (quantity is in `unit`). */
+export const pantryItems = sqliteTable(
+  'pantry_items',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    /** normalized lookup key so "Milk" and "MILK 2%" can be merged onto one row */
+    nameKey: text('name_key').notNull(),
+    category: text('category'),
+    unit: text('unit'),
+    quantity: real('quantity').notNull().default(0),
+    minQuantity: real('min_quantity').notNull().default(0),
+    source: text('source', { enum: ['manual', 'receipt', 'voice'] }).notNull().default('manual'),
+    updatedAt: text('updated_at').notNull(),
+    createdAt: text('created_at').notNull(),
+    deletedAt: text('deleted_at')
+  },
+  (t) => [index('idx_pantry_name_key').on(t.nameKey)]
+)
+
+/** The weekly shopping order (what we need to buy). */
+export const shoppingItems = sqliteTable(
+  'shopping_items',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    nameKey: text('name_key').notNull(),
+    quantity: real('quantity').notNull().default(1),
+    unit: text('unit'),
+    note: text('note'),
+    checked: integer('checked', { mode: 'boolean' }).notNull().default(false),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: text('created_at').notNull()
+  },
+  (t) => [index('idx_shopping_name_key').on(t.nameKey)]
+)
+
+/** Receipt photo scans: image on disk + OCR text + parsed summary. */
+export const receiptScans = sqliteTable('receipt_scans', {
+  id: text('id').primaryKey(),
+  imagePath: text('image_path').notNull(),
+  store: text('store'),
+  total: real('total'),
+  rawText: text('raw_text'),
+  itemCount: integer('item_count').notNull().default(0),
+  /** set once the user confirms the parsed items into the pantry */
+  appliedAt: text('applied_at'),
+  scannedAt: text('scanned_at').notNull(),
+  createdAt: text('created_at').notNull()
 })

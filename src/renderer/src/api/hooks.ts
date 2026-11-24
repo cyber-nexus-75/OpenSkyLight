@@ -256,13 +256,21 @@ export function useChoresDay(date: string) {
   })
 }
 
+export function useChoresTasks(date: string) {
+  return useQuery({
+    queryKey: ['choresTasks', date],
+    queryFn: () => ipcInvoke('chores:getTasks', { date }),
+    placeholderData: (prev) => prev
+  })
+}
+
 export function useBalances() {
   return useQuery({ queryKey: ['balances'], queryFn: () => ipcInvoke('stars:balances', undefined) })
 }
 
 export function useChoreMutations() {
-  const defKeys = [['chores'], ['choresDay']]
-  const checkKeys = [['choresDay'], ['balances']]
+  const defKeys = [['chores'], ['choresDay'], ['choresTasks']]
+  const checkKeys = [['choresDay'], ['choresTasks'], ['balances']]
   return {
     create: useInvalidatingMutation(
       (input: Parameters<typeof ipcInvoke<'chores:create'>>[1]) => ipcInvoke('chores:create', input),
@@ -274,7 +282,7 @@ export function useChoreMutations() {
     ),
     remove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('chores:delete', input), defKeys),
     complete: useInvalidatingMutation(
-      (input: { choreId: string; date: string }) => ipcInvoke('chores:complete', input),
+      (input: { choreId: string; date: string; personId?: string }) => ipcInvoke('chores:complete', input),
       checkKeys
     ),
     uncomplete: useInvalidatingMutation(
@@ -344,6 +352,59 @@ export function useListMutations() {
   }
 }
 
+export function useGroceries() {
+  return useQuery({ queryKey: ['groceries'], queryFn: () => ipcInvoke('groceries:getState', undefined) })
+}
+
+export function useReceipts() {
+  return useQuery({
+    queryKey: ['groceries', 'receipts'],
+    queryFn: () => ipcInvoke('groceries:listReceipts', undefined)
+  })
+}
+
+export function useGroceriesMutations() {
+  const keys = [['groceries']]
+  return {
+    pantryAdd: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'pantry:add'>>[1]) => ipcInvoke('pantry:add', input),
+      keys
+    ),
+    pantryUpdate: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'pantry:update'>>[1]) => ipcInvoke('pantry:update', input),
+      keys
+    ),
+    pantryAdjust: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'pantry:adjust'>>[1]) => ipcInvoke('pantry:adjust', input),
+      keys
+    ),
+    pantryRemove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('pantry:remove', input), keys),
+    shoppingAdd: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'shopping:add'>>[1]) => ipcInvoke('shopping:add', input),
+      keys
+    ),
+    shoppingUpdate: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'shopping:update'>>[1]) => ipcInvoke('shopping:update', input),
+      keys
+    ),
+    shoppingToggle: useInvalidatingMutation((input: { id: string }) => ipcInvoke('shopping:toggle', input), keys),
+    shoppingRemove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('shopping:remove', input), keys),
+    shoppingClear: useInvalidatingMutation(() => ipcInvoke('shopping:clearChecked', undefined), keys),
+    addLowStock: useInvalidatingMutation(() => ipcInvoke('shopping:addLowStock', undefined), keys),
+    applyReceipt: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'groceries:applyReceipt'>>[1]) => ipcInvoke('groceries:applyReceipt', input),
+      keys
+    ),
+    scanReceipt: useInvalidatingMutation(
+      (data: string) => ipcInvoke('groceries:scanReceipt', { data }),
+      keys
+    ),
+    openFrys: useMutation({ mutationFn: (query?: string) => ipcInvoke('groceries:openFrys', { query }) }),
+    copyList: useMutation({ mutationFn: (format: 'text' | 'csv') => ipcInvoke('groceries:copyList', { format }) }),
+    receiptDetail: useMutation({ mutationFn: (scanId: string) => ipcInvoke('groceries:receiptDetail', { scanId }) })
+  }
+}
+
 export function useMeals(start: string, end: string) {
   return useQuery({
     queryKey: ['meals', start, end],
@@ -357,7 +418,34 @@ export function useMealMutations() {
     set: useInvalidatingMutation(
       (input: Parameters<typeof ipcInvoke<'meals:set'>>[1]) => ipcInvoke('meals:set', input),
       [['meals']]
+    ),
+    move: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'meals:move'>>[1]) => ipcInvoke('meals:move', input),
+      [['meals']]
+    ),
+    addIngredients: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'meals:addIngredients'>>[1]) => ipcInvoke('meals:addIngredients', input),
+      [['meals'], ['lists']]
     )
+  }
+}
+
+export function useRecipes() {
+  return useQuery({ queryKey: ['recipes'], queryFn: () => ipcInvoke('recipes:list', undefined) })
+}
+
+export function useRecipeMutations() {
+  const keys = [['recipes'], ['meals']]
+  return {
+    create: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'recipes:create'>>[1]) => ipcInvoke('recipes:create', input),
+      keys
+    ),
+    update: useInvalidatingMutation(
+      (input: Parameters<typeof ipcInvoke<'recipes:update'>>[1]) => ipcInvoke('recipes:update', input),
+      keys
+    ),
+    remove: useInvalidatingMutation((input: { id: string }) => ipcInvoke('recipes:delete', input), keys)
   }
 }
 
@@ -418,6 +506,7 @@ export function usePushInvalidation(): void {
       if (domain === 'chores') {
         // chore day views and star balances key off their own roots
         void queryClient.invalidateQueries({ queryKey: ['choresDay'] })
+        void queryClient.invalidateQueries({ queryKey: ['choresTasks'] })
         void queryClient.invalidateQueries({ queryKey: ['balances'] })
       }
     })
@@ -428,10 +517,16 @@ export function usePushInvalidation(): void {
       const title = (data as { title?: string })?.title ?? 'An event'
       pushToast(`"${title}" was changed elsewhere — showing the latest version`)
     })
+    // server mode: the Google consent URL arrives as a push; open it on this device
+    const offAuthUrl = window.osl.on('push:googleAuthUrl', (data) => {
+      const url = (data as { url?: string })?.url
+      if (url) window.open(url, '_blank', 'noopener')
+    })
     return () => {
       offData()
       offStatus()
       offConflict()
+      offAuthUrl()
     }
   }, [queryClient, pushToast])
 }

@@ -11,7 +11,9 @@ import { DayView } from './features/calendar/DayView'
 import { MonthView } from './features/calendar/MonthView'
 import { AgendaView } from './features/calendar/AgendaView'
 import { ChoresView } from './features/chores/ChoresView'
+import { TasksView } from './features/chores/TasksView'
 import { ListsView } from './features/lists/ListsView'
+import { GroceriesView } from './features/groceries/GroceriesView'
 import { EventEditor } from './features/calendar/EventEditor'
 import { SettingsSheet } from './features/settings/SettingsSheet'
 import { KioskOverlays } from './features/kiosk/KioskOverlays'
@@ -45,9 +47,11 @@ export default function App() {
         {view === 'month' && <MonthView />}
         {view === 'agenda' && <AgendaView />}
         {view === 'chores' && <ChoresView />}
+        {view === 'tasks' && <TasksView />}
         {view === 'lists' && <ListsView />}
+        {view === 'groceries' && <GroceriesView />}
       </main>
-      {view !== 'chores' && view !== 'lists' && view !== 'home' && <Fab />}
+      {view !== 'chores' && view !== 'tasks' && view !== 'lists' && view !== 'groceries' && view !== 'home' && <Fab />}
       <EventEditor />
       <SettingsSheet />
       <OskTray />

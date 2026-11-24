@@ -1,12 +1,14 @@
-import { app, dialog, ipcMain, BrowserWindow } from 'electron'
+import { clipboard, dialog, shell } from 'electron'
 import { DateTime } from 'luxon'
 import type { ZodType } from 'zod'
 import { ZodError } from 'zod'
 import type { IpcChannel, IpcContract, IpcResult } from '@shared/ipc/contract'
 import * as s from '@shared/ipc/schemas'
+import { frysCsv, frysSearchUrl, frysTextList, type FrysLine } from '@shared/groceries/frys'
 import { AppError, notFound } from '../services/errors'
 import { decodeBase64Image } from '../services/avatarService'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { decodeReceiptImage } from '../services/receiptService'
 import type { SettingsService } from '../services/settingsService'
 import type { PeopleService } from '../services/peopleService'
 import type { AvatarService } from '../services/avatarService'
@@ -37,6 +39,9 @@ import type { BackupService } from '../services/backupService'
 import type { RecipeService } from '../services/recipeService'
 import type { BirdNetService } from '../services/birdnetService'
 import type { CompanionServer } from '../companion/companionServer'
+import { broadcast } from './bus'
+import type { GroceriesService } from '../services/groceriesService'
+import type { ReceiptService } from '../services/receiptService'
 
 export interface Services {
   settings: SettingsService
@@ -68,6 +73,8 @@ export interface Services {
   recipeLibrary: RecipeService
   birdnet: BirdNetService
   companion: CompanionServer
+  groceries: GroceriesService
+  receipts: ReceiptService
 }
 
 /**
@@ -97,6 +104,9 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
   'chores:create',
   'chores:update',
   'chores:delete',
+  'recipes:create',
+  'recipes:update',
+  'recipes:delete',
   'rewards:create',
   'rewards:update',
   'rewards:delete',
@@ -122,7 +132,7 @@ const PARENT_GATED: Set<IpcChannel> = new Set([
 ])
 
 /** Channels that mutate data, mapped to the domain the renderer should refetch. */
-type MutationDomain = 'events' | 'people' | 'calendars' | 'settings' | 'lists' | 'meals' | 'chores'
+type MutationDomain = 'events' | 'people' | 'calendars' | 'settings' | 'lists' | 'meals' | 'chores' | 'groceries'
 const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'settings:set': 'settings',
   'people:create': 'people',
@@ -150,17 +160,28 @@ const MUTATION_DOMAINS: Partial<Record<IpcChannel, MutationDomain>> = {
   'listItems:delete': 'lists',
   'listItems:clearChecked': 'lists',
   'meals:set': 'meals',
+  'meals:move': 'meals',
+  'meals:addIngredients': 'lists',
+  'recipes:create': 'meals',
+  'recipes:update': 'meals',
+  'recipes:delete': 'meals',
   'chores:create': 'chores',
   'chores:update': 'chores',
   'chores:delete': 'chores',
   'chores:complete': 'chores',
-  'chores:uncomplete': 'chores'
-}
-
-export function broadcast(channel: string, payload: unknown): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send(channel, payload)
-  }
+  'chores:uncomplete': 'chores',
+  'pantry:add': 'groceries',
+  'pantry:update': 'groceries',
+  'pantry:adjust': 'groceries',
+  'pantry:remove': 'groceries',
+  'shopping:add': 'groceries',
+  'shopping:update': 'groceries',
+  'shopping:toggle': 'groceries',
+  'shopping:remove': 'groceries',
+  'shopping:clearChecked': 'groceries',
+  'shopping:addLowStock': 'groceries',
+  'groceries:scanReceipt': 'groceries',
+  'groceries:applyReceipt': 'groceries'
 }
 
 interface ChannelEntry {
@@ -203,14 +224,8 @@ export async function dispatch<K extends IpcChannel>(
   }
 }
 
-export function registerIpcHandlers(services: Services, table: ChannelTable): void {
-  for (const channel of table.keys()) {
-    ipcMain.handle(channel, (_event, payload) => dispatch(services, table, channel, payload, { gate: 'pin' }))
-  }
-}
-
 /** The single channel → {schema, handler} map consumed by ipcMain AND the companion HTTP API. */
-export function buildChannelTable(services: Services): ChannelTable {
+export function buildChannelTable(services: Services, version: string): ChannelTable {
   const table: ChannelTable = new Map()
   function handle<K extends IpcChannel>(
     channel: K,
@@ -221,7 +236,7 @@ export function buildChannelTable(services: Services): ChannelTable {
   }
 
   handle('app:getInfo', null, () => ({
-    version: app.getVersion(),
+    version,
     platform: process.platform,
     zone: DateTime.local().zoneName ?? 'UTC'
   }))
@@ -325,7 +340,8 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('chores:update', s.choreUpdateSchema, (req) => services.chores.update(req))
   handle('chores:delete', s.idSchema, (req) => services.chores.remove(req.id))
   handle('chores:getDay', s.choreDaySchema, (req) => services.chores.getDay(req.date))
-  handle('chores:complete', s.choreCheckSchema, (req) => services.chores.complete(req.choreId, req.date))
+  handle('chores:getTasks', s.choreDaySchema, (req) => services.chores.getTasks(req.date))
+  handle('chores:complete', s.choreCheckSchema, (req) => services.chores.complete(req.choreId, req.date, req.personId))
   handle('chores:uncomplete', s.choreCheckSchema, (req) => services.chores.uncomplete(req.choreId, req.date))
 
   handle('stars:balances', null, () => services.chores.balances())
@@ -348,7 +364,52 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('listItems:clearChecked', s.listIdSchema, (req) => services.lists.clearChecked(req.listId))
 
   handle('meals:getRange', s.mealsRangeSchema, (req) => services.meals.getRange(req.start, req.end))
-  handle('meals:set', s.mealSetSchema, (req) => services.meals.set(req.date, req.slot, req.text))
+  handle('meals:set', s.mealSetSchema, (req) => services.meals.set(req.date, req.slot, req))
+  handle('meals:move', s.mealMoveSchema, (req) => services.meals.move(req.id, req.date, req.slot))
+  handle('meals:addIngredients', s.mealAddIngredientsSchema, (req) => services.meals.addIngredients(req.mealSlotId, req.listId))
+
+  handle('recipes:list', null, () => services.meals.listRecipes())
+  handle('recipes:create', s.recipeCreateSchema, (req) => services.meals.createRecipe(req))
+  handle('recipes:update', s.recipeUpdateSchema, (req) => services.meals.updateRecipe(req))
+  handle('recipes:delete', s.idSchema, (req) => services.meals.removeRecipe(req.id))
+
+  handle('groceries:getState', null, () => services.groceries.getState())
+  handle('pantry:add', s.pantryAddSchema, (req) =>
+    services.groceries.pantryAdd({ ...req, source: 'manual' })
+  )
+  handle('pantry:update', s.pantryUpdateSchema, (req) => services.groceries.pantryUpdate(req))
+  handle('pantry:adjust', s.pantryAdjustSchema, (req) => services.groceries.pantryAdjust(req.id, req.delta))
+  handle('pantry:remove', s.idSchema, (req) => services.groceries.pantryRemove(req.id))
+  handle('shopping:add', s.shoppingAddSchema, (req) => services.groceries.shoppingAdd(req))
+  handle('shopping:update', s.shoppingUpdateSchema, (req) => services.groceries.shoppingUpdate(req))
+  handle('shopping:toggle', s.idSchema, (req) => services.groceries.shoppingToggle(req.id))
+  handle('shopping:remove', s.idSchema, (req) => services.groceries.shoppingRemove(req.id))
+  handle('shopping:clearChecked', null, () => services.groceries.shoppingClearChecked())
+  handle('shopping:addLowStock', null, () => services.groceries.shoppingAddLowStock())
+  handle('groceries:scanReceipt', s.scanReceiptSchema, async (req) => {
+    const bytes = decodeReceiptImage(req.data)
+    return services.receipts.scan(bytes)
+  })
+  handle('groceries:applyReceipt', s.applyReceiptSchema, (req) => services.groceries.applyReceipt(req.scanId, req.items))
+  handle('groceries:listReceipts', null, () => services.groceries.listReceipts())
+  handle('groceries:receiptDetail', s.scanIdSchema, (req) => services.receipts.getScanDetail(req.scanId))
+  handle('groceries:receiptImage', s.scanIdSchema, (req) => ({ dataUrl: services.receipts.getImageDataUrl(req.scanId) }))
+  handle('groceries:openFrys', s.openFrysSchema, (req) => {
+    const base = services.settings.getAll().groceries.storeBaseUrl
+    const url = req.query ? frysSearchUrl(base, req.query) : frysSearchUrl(base, '')
+    void shell.openExternal(url)
+    return { url }
+  })
+  handle('groceries:copyList', s.copyListSchema, (req) => {
+    const base = services.settings.getAll().groceries.storeBaseUrl
+    const lines: FrysLine[] = services.groceries
+      .getState()
+      .shopping.filter((i) => !i.checked)
+      .map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit }))
+    const text = req.format === 'csv' ? frysCsv(base, lines) : frysTextList(lines)
+    clipboard.writeText(text)
+    return { text }
+  })
 
   handle('rss:getFeed', s.rssFeedSchema, (req) => services.rss.getFeed(req.feedId))
 
@@ -493,6 +554,7 @@ export function buildChannelTable(services: Services): ChannelTable {
   handle('screensaver:pickFolder', null, () => services.kiosk.pickFolder())
   handle('screensaver:listPhotos', null, () => services.kiosk.listPhotos())
   handle('kiosk:previewScreensaver', null, () => services.kiosk.previewScreensaver())
+  handle('kiosk:reportIdle', s.idleReportSchema, (req) => services.kiosk.reportIdle(req.seconds))
 
   handle('companion:getStatus', null, () => services.companion.getStatus())
   handle('companion:issueToken', null, () => services.companion.issueToken())

@@ -179,7 +179,7 @@ export interface EventDeleteInput {
   occurrenceStart?: string
 }
 
-export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'lists'
+export type CalendarViewKind = 'home' | 'day' | 'week' | 'month' | 'agenda' | 'chores' | 'tasks' | 'lists' | 'groceries'
 
 export type HomeTileType =
   | 'todayEvents'
@@ -249,7 +249,6 @@ export const MEAL_SLOTS: MealSlotKind[] = ['breakfast', 'lunch', 'dinner', 'snac
 export interface RecipeDto {
   id: string
   title: string
-  /** JSON string[] */
   ingredients: string[]
   instructions: string | null
   tags: string[]
@@ -257,20 +256,44 @@ export interface RecipeDto {
   sourceUrl: string | null
 }
 
+export interface RecipeCreateInput {
+  title: string
+  ingredients?: string[]
+  instructions?: string | null
+  tags?: string[]
+  sourceUrl?: string | null
+}
+
+export interface RecipeUpdateInput {
+  id: string
+  title?: string
+  ingredients?: string[]
+  instructions?: string | null
+  tags?: string[]
+  sourceUrl?: string | null
+}
+
 export interface MealSlotDto {
+  id: string
   /** YYYY-MM-DD */
   date: string
   slot: MealSlotKind
+  /** free text, or the recipe title when linked to a recipe */
   text: string
+  recipeId: string | null
+  /** profiles this meal is assigned to (school lunch, dietary needs) */
+  personIds: string[]
+  sortOrder: number
 }
 
-export type ChoreRoutine = 'morning' | 'evening' | null
+export type ChoreRoutine = 'morning' | 'afternoon' | 'evening' | null
 
 export interface ChoreDto {
   id: string
   title: string
   icon: string | null
-  personId: string
+  /** null = up for grabs (anyone may claim it) */
+  personId: string | null
   /** 2+ person ids alternating weekly; empty = fixed assignment */
   rotationPersonIds: string[]
   starsValue: number
@@ -279,31 +302,44 @@ export interface ChoreDto {
   /** YYYY-MM-DD; first day the chore applies (and the only day for one-offs) */
   anchorDate: string
   routine: ChoreRoutine
+  /** claimable by any family member; stars go to whoever checks it off */
+  upForGrabs: boolean
+  /** one-time chore that is due again every day after its anchor */
+  repeatAfter: boolean
+  /** chores that auto-complete together with this one */
+  linkedChoreIds: string[]
   active: boolean
   sortOrder: number
 }
 
 export interface ChoreCreateInput {
   title: string
-  personId: string
+  /** null = up for grabs */
+  personId: string | null
   /** 2+ ids = rotate weekly between these people; omit/empty = fixed personId */
   rotationPersonIds?: string[]
   starsValue: number
   recurrence?: RecurrenceInput | null
   anchorDate?: string
   routine?: ChoreRoutine
+  upForGrabs?: boolean
+  repeatAfter?: boolean
+  linkedChoreIds?: string[]
 }
 
 export interface ChoreUpdateInput {
   id: string
   title?: string
-  personId?: string
+  personId?: string | null
   /** empty array clears the rotation; undefined = leave unchanged */
   rotationPersonIds?: string[]
   starsValue?: number
   recurrence?: RecurrenceInput | null
   anchorDate?: string
   routine?: ChoreRoutine
+  upForGrabs?: boolean
+  repeatAfter?: boolean
+  linkedChoreIds?: string[]
   active?: boolean
 }
 
@@ -311,10 +347,32 @@ export interface DayChoreDto {
   choreId: string
   title: string
   icon: string | null
-  personId: string
+  /** null = up for grabs */
+  personId: string | null
+  upForGrabs: boolean
+  /** who claimed an up-for-grabs chore (null when not completed or not a grab) */
+  claimerId: string | null
   starsValue: number
   routine: ChoreRoutine
   completed: boolean
+}
+
+/** One row of the all-tasks view (chores across people + the up-for-grabs pool). */
+export interface TaskItemDto {
+  choreId: string
+  title: string
+  icon: string | null
+  personId: string | null
+  upForGrabs: boolean
+  claimerId: string | null
+  starsValue: number
+  routine: ChoreRoutine
+  recurrence: RecurrenceInput | null
+  anchorDate: string
+  dueToday: boolean
+  completedToday: boolean
+  /** one-time chore whose anchor date passed without a completion */
+  overdue: boolean
 }
 
 export interface StarBalanceDto {
@@ -340,6 +398,53 @@ export interface RedemptionDto {
   status: 'pending' | 'granted'
 }
 
+export type PantrySource = 'manual' | 'receipt' | 'voice'
+
+export interface PantryItemDto {
+  id: string
+  name: string
+  category: string | null
+  unit: string | null
+  quantity: number
+  minQuantity: number
+  source: PantrySource
+  updatedAt: string
+  createdAt: string
+}
+
+export interface ShoppingItemDto {
+  id: string
+  name: string
+  quantity: number
+  unit: string | null
+  note: string | null
+  checked: boolean
+  sortOrder: number
+  createdAt: string
+}
+
+export interface ReceiptScanDto {
+  id: string
+  store: string | null
+  total: number | null
+  itemCount: number
+  applied: boolean
+  scannedAt: string
+}
+
+/** One scan's OCR result, returned right after scanning for review before applying. */
+export interface ReceiptScanResultDto {
+  scan: ReceiptScanDto
+  rawText: string
+  parsed: { store: string | null; total: number | null; items: ParsedReceiptItem[] }
+}
+
+export interface GroceriesStateDto {
+  pantry: PantryItemDto[]
+  shopping: ShoppingItemDto[]
+  lowStock: PantryItemDto[]
+}
+
 export interface AppSettings {
   /** 0 = Sunday, 1 = Monday */
   weekStartsOn: 0 | 1
@@ -359,9 +464,15 @@ export interface AppSettings {
   companion: { enabled: boolean; port: number }
   /** background sync cadence for calendar providers, in minutes */
   syncIntervalMinutes: number
+  /** chore board: 'all' shows every routine, 'current' only the current part of day */
+  routinesDisplay: 'all' | 'current'
+  /** grocery store used for order handoff links (Fry's/Kroger by default) */
+  groceries: { storeBaseUrl: string }
 }
 
 import { DEFAULT_HOME_LAYOUT } from '../home'
+import { DEFAULT_STORE_BASE_URL } from '../groceries/frys'
+import type { ParsedReceiptItem } from '../groceries/receiptParse'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   weekStartsOn: 0,
@@ -376,7 +487,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchOnStartup: false,
   homeLayout: DEFAULT_HOME_LAYOUT,
   companion: { enabled: false, port: 8420 },
-  syncIntervalMinutes: 15
+  syncIntervalMinutes: 15,
+  routinesDisplay: 'all',
+  groceries: { storeBaseUrl: DEFAULT_STORE_BASE_URL }
 }
 
 /** Touch-friendly person color palette (Skylight-style) */

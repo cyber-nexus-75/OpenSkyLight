@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSettings } from '../../api/hooks'
+import { useMealMutations, useSettings } from '../../api/hooks'
 import { useUi, ZONE } from '../../stores/uiStore'
 import { occurrenceColor } from '../../lib/colors'
 import { EventCard } from './EventCard'
@@ -20,6 +20,7 @@ export function DayView() {
   const occurrences = byDay.get(focusedDate) ?? []
   const day = DateTime.fromISO(focusedDate, { zone: ZONE })
   const mealsByDay = useMealsForRange(range)
+  const mealMutations = useMealMutations()
   const [mealDate, setMealDate] = useState<string | null>(null)
 
   return (
@@ -31,7 +32,13 @@ export function DayView() {
         </div>
       </div>
       <div className="animate-rise mb-4">
-        <MealStrip date={focusedDate} meals={mealsByDay.get(focusedDate) ?? []} onOpen={setMealDate} compact={false} />
+        <MealStrip
+          date={focusedDate}
+          meals={mealsByDay.get(focusedDate) ?? []}
+          onOpen={setMealDate}
+          onMove={(id, date, slot) => mealMutations.move.mutate({ id, date, slot })}
+          compact={false}
+        />
       </div>
       <MealsDialog
         date={mealDate}
