@@ -47,8 +47,13 @@ export const COMPANION_CHANNELS: ReadonlySet<IpcChannel> = new Set<IpcChannel>([
   'shopping:addLowStock',
   'groceries:listReceipts',
   'groceries:receiptDetail',
-  'groceries:applyReceipt'
+  'groceries:applyReceipt',
   // note: groceries:scanReceipt rides the binary /api/receipt endpoint instead
   // (64 KB RPC body cap), and groceries:openFrys/copyList are kiosk-only —
   // phones open store links and use the clipboard directly in the browser
+  'wallnote:get',
+  'wallnote:set',
+  'recipes:list',
+  'recipes:importUrl',
+  'recipes:delete'
 ])

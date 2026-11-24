@@ -209,7 +209,16 @@ const MIGRATIONS: string[] = [
   ALTER TABLE calendars ADD COLUMN caldav_calendar_url TEXT;
   ALTER TABLE calendars ADD COLUMN person_id TEXT REFERENCES people(id);
   `,
-  // 003 — groceries: pantry inventory, weekly shopping list, receipt scans
+  // 003 — birthdays on people
+  `
+  ALTER TABLE people ADD COLUMN birthday TEXT;
+  ALTER TABLE people ADD COLUMN birth_year INTEGER;
+  `,
+  // 004 — chore rotations
+  `
+  ALTER TABLE chores ADD COLUMN rotation_person_ids TEXT;
+  `,
+  // 005 — groceries: pantry inventory, weekly shopping list, receipt scans
   `
   CREATE TABLE pantry_items (
     id TEXT PRIMARY KEY,

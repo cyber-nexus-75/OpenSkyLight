@@ -1,9 +1,59 @@
 import { useState } from 'react'
 import type { ListDto } from '@shared/types'
-import { useListMutations, useLists } from '../api/hooks'
+import { useListMutations, useLists, useWallNote, useWallNoteMutation } from '../api/hooks'
 import { Card, CheckCircle, EmptyNote, GhostButton, PrimaryButton, TextInput } from '../components/ui'
 
 const LIST_COLORS = ['#46A758', '#0091FF', '#FFB224', '#6E56CF', '#E5484D', '#D95B3A']
+
+function WallNoteCard() {
+  const note = useWallNote()
+  const mutation = useWallNoteMutation()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const text = note.data?.text ?? ''
+  return (
+    <Card>
+      <div className="mb-1 flex items-center gap-2">
+        <h2 className="flex-1 font-display text-xl font-semibold">Family note</h2>
+        {!editing && (
+          <GhostButton
+            onClick={() => {
+              setDraft(text)
+              setEditing(true)
+            }}
+          >
+            Edit
+          </GhostButton>
+        )}
+      </div>
+      {editing ? (
+        <div className="flex flex-col gap-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="min-h-20 w-full rounded-xl border border-line bg-paper p-2 text-base font-semibold outline-none focus:border-ember"
+            placeholder="Where are the keys?"
+          />
+          <div className="flex gap-2">
+            <GhostButton onClick={() => setEditing(false)}>Cancel</GhostButton>
+            <PrimaryButton
+              onClick={() => {
+                mutation.mutate({ text: draft })
+                setEditing(false)
+              }}
+            >
+              Save
+            </PrimaryButton>
+          </div>
+        </div>
+      ) : (
+        <p className="whitespace-pre-wrap text-base font-semibold text-ink-soft">
+          {text || 'No note yet — tap Edit to leave one for the family.'}
+        </p>
+      )}
+    </Card>
+  )
+}
 
 export function ListsPage() {
   const { data: lists = [], isPending } = useLists()
@@ -21,6 +71,7 @@ export function ListsPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <WallNoteCard />
       {isPending && <EmptyNote>Loading…</EmptyNote>}
       {!isPending && lists.length === 0 && <EmptyNote>No lists yet — create the first one below.</EmptyNote>}
       {lists.map((list) => (
@@ -67,6 +118,7 @@ function ListCard({ list, mutations }: { list: ListDto; mutations: ReturnType<ty
       <div className="mb-1 flex items-center gap-2.5">
         <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ backgroundColor: list.color }} />
         <h2 className="flex-1 truncate font-display text-xl font-semibold">{list.name}</h2>
+        <GhostButton onClick={() => shareList(list)}>Share</GhostButton>
         {checked.length > 0 && (
           <button
             type="button"
@@ -129,4 +181,16 @@ function ListCard({ list, mutations }: { list: ListDto; mutations: ReturnType<ty
       </form>
     </Card>
   )
+}
+
+
+/** Share the unchecked items as plain text — the shopper's shopping list. */
+function shareList(list: ListDto): void {
+  const items = list.items.filter((i) => !i.checked).map((i) => `• ${i.text}`)
+  const text = `${list.name} (${items.length})\n\n${items.join('\n')}`
+  if (navigator.share) {
+    void navigator.share({ title: list.name, text }).catch(() => undefined)
+  } else {
+    void navigator.clipboard?.writeText(text)
+  }
 }

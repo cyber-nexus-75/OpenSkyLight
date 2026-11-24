@@ -1,13 +1,13 @@
 import { app, dialog, net, powerMonitor, powerSaveBlocker, protocol } from 'electron'
 import { readdirSync, existsSync } from 'node:fs'
-import { join, resolve, extname } from 'node:path'
+import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DateTime } from 'luxon'
 import type { SettingsService } from '../services/settingsService'
 import type { AvatarService } from '../services/avatarService'
 import { isInSleepWindow } from '@shared/sleepWindow'
+import { resolvePhotoInDir, PHOTO_EXTENSIONS } from './photoGuard'
 
-const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'])
 const IDLE_POLL_MS = 5_000
 const SLEEP_POLL_MS = 5_000
 
@@ -28,21 +28,18 @@ export function createKiosk(deps: {
   /** Photos are served through osl-photo:// so the sandboxed renderer never touches the filesystem. */
   function registerPhotoProtocol(): void {
     protocol.handle('osl-photo', (request) => {
+      const name = decodeURIComponent(new URL(request.url).pathname.replace(/^\//, ''))
       const cache = webdavCacheDir
-      const name0 = decodeURIComponent(new URL(request.url).pathname.replace(/^\//, ''))
       if (cache) {
-        const cachedFull = resolve(join(cache, name0))
-        if (cachedFull.startsWith(resolve(cache)) && existsSync(cachedFull)) {
+        const cachedFull = resolvePhotoInDir(cache, name)
+        if (cachedFull && existsSync(cachedFull)) {
           return net.fetch(pathToFileURL(cachedFull).toString())
         }
       }
       const folder = settings.getAll().screensaver.folder
       if (!folder) return new Response('no folder', { status: 404 })
-      const url = new URL(request.url)
-      const name = decodeURIComponent(url.pathname.replace(/^\//, ''))
-      const full = resolve(join(folder, name))
-      // path-traversal guard: the resolved file must stay inside the folder
-      if (!full.startsWith(resolve(folder))) return new Response('forbidden', { status: 403 })
+      const full = resolvePhotoInDir(folder, name)
+      if (!full) return new Response('forbidden', { status: 403 })
       return net.fetch(pathToFileURL(full).toString())
     })
   }

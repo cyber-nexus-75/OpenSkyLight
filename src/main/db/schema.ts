@@ -8,6 +8,10 @@ export const people = sqliteTable('people', {
   color: text('color').notNull(),
   role: text('role', { enum: ['parent', 'child'] }).notNull().default('child'),
   avatarPath: text('avatar_path'),
+  /** birthday as MM-DD (year unknown for in-laws etc.); null = not set */
+  birthday: text('birthday'),
+  /** birth year for age display; null = hide age */
+  birthYear: integer('birth_year'),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
   deletedAt: text('deleted_at')
@@ -117,6 +121,8 @@ export const chores = sqliteTable('chores', {
   title: text('title').notNull(),
   icon: text('icon'),
   personId: text('person_id').references(() => people.id),
+  /** rotation: 2+ person ids alternating by ISO week; null = fixed personId */
+  rotationPersonIds: text('rotation_person_ids'),
   starsValue: integer('stars_value').notNull().default(1),
   scheduleRrule: text('schedule_rrule'),
   dueDate: text('due_date'),
